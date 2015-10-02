@@ -1,9 +1,8 @@
 import numpy as np
 import unittest
 from sisfft.timer import timer
-from sisfft import psfft, naive
+from sisfft import psfft
 
-np.random.seed(1)
 #logging.basicConfig(level = logging.INFO)
 
 TEST_REPEATS = 20
@@ -58,14 +57,3 @@ for log10_alpha in range(1, 5 + 1):
         setattr(Psfft, name, test)
         setattr(Psfft, name_square, test_square)
 
-class Naive(unittest.TestCase):
-    def test_naive(self):
-        for _ in range(0, TEST_REPEATS):
-            v1 = np.random.rand(TEST_LENGTH)
-            v2 = np.random.rand(TEST_LENGTH)
-
-            with timer('numpy'):
-                real = np.convolve(v1, v2)
-            with timer('log'):
-                hopeful = np.exp(naive.convolve_naive(np.log(v1), np.log(v2)))
-            self.assertTrue(np.allclose(real, hopeful))
