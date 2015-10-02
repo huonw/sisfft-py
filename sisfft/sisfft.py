@@ -2,7 +2,7 @@ import numpy as np, scipy as sc
 from numpy.fft import fft, ifft
 from scipy import optimize
 
-import psfft, naive
+import psfft, naive, utils
 
 def conv_power(log_pmf, L, desired_alpha, desired_delta):
     if L == 0:

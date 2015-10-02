@@ -6,13 +6,12 @@ from scipy import optimize
 from timer import timer
 import unittest
 
-import naive
-
-
-EPS = np.finfo(float).eps
-NEG_INF = float('-inf')
+import naive, utils
+from utils import NEG_INF, EPS
 
 COST_RATIO = 1e-10
+
+OPT_BOUND = 1e10
 
 def convolve(log_pmf1, log_pmf2, alpha, delta = None):
     # assert len(log_pmf1) == len(log_pmf2)
@@ -20,7 +19,11 @@ def convolve(log_pmf1, log_pmf2, alpha, delta = None):
         return _psfft_noshift(log_pmf1, log_pmf2, alpha, delta)
     else:
         # shift, convolve, unshift
-        raise NotImplementedError()
+        theta = _compute_theta(log_pmf1, log_pmf2)
+        s1, log_mgf1 = utils.shift(log_pmf1, theta)
+        s2, log_mgf2 = utils.shift(log_pmf2, theta)
+        convolved = _psfft_noshift(s1, s2, alpha, NEG_INF)
+        return utils.unshift(convolved, theta, (log_mgf1, 1), (log_mgf2, 1))
 
 def convolve_square(log_pmf, alpha, delta = None):
     # TODO: make this more efficient
@@ -125,3 +128,11 @@ def _filtered_mult_ifft(fft1, normaliser1, fft2, normaliser2, true_conv_len):
     filtered += normaliser1 + normaliser2
     return filtered
 
+
+def _compute_theta(log_pmf1, log_pmf2, Lnorm = 2):
+    def f(theta):
+        s1, _ = utils.shift(log_pmf1, theta)
+        s2, _ = utils.shift(log_pmf2, theta)
+        r = utils.log_dynamic_range(s1) * utils.log_dynamic_range(s2)
+        return r
+    return optimize.fminbound(f, -OPT_BOUND, OPT_BOUND)

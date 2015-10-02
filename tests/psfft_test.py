@@ -45,6 +45,25 @@ class Psfft(unittest.TestCase):
             self.assertTrue(between.all(),
                             '%s\n%s' % (hopeful[not_between], real[not_between]))
 
+    def psfft_no_lower_bound_test(self, alpha):
+        for _ in range(0, TEST_REPEATS):
+            v1 = np.random.rand(TEST_LENGTH)
+            v1 /= v1.sum()
+            v2 = np.random.rand(TEST_LENGTH)
+            v2 /= v2.sum()
+
+            with timer('naive'):
+                real = np.convolve(v1, v2)
+            with timer('psfft'):
+                hopeful = np.exp(psfft.convolve(np.log(v1), np.log(v2), alpha, None))
+
+            lower = (1 - 1.0 / alpha) * real
+            upper = (1 + 1.0 / alpha) * real
+            between = (lower <= hopeful) & (hopeful <= upper)
+            not_between = np.invert(between)
+            self.assertTrue(between.all(),
+                            '%s\n%s' % (hopeful[not_between], real[not_between]))
+
 for log10_alpha in range(1, 5 + 1):
     alpha = 10**log10_alpha
     for delta in [0.0, 0.0001, 0.01, 0.1]:
@@ -57,3 +76,6 @@ for log10_alpha in range(1, 5 + 1):
         setattr(Psfft, name, test)
         setattr(Psfft, name_square, test_square)
 
+    name_no_bound = 'test_no_bound_%s' % alpha
+    test_no_bound = lambda self, alpha=alpha: self.psfft_no_lower_bound_test(alpha)
+    setattr(Psfft, name_no_bound, test_no_bound)

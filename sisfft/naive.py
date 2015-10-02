@@ -2,18 +2,7 @@ import numpy as np
 from timer import timer
 import unittest
 
-NEG_INF = -float('inf')
-
-def log_sum(log_u):
-    """Compute `log(sum(exp(log_u)))`"""
-    if len(log_u) == 0:
-        return NEG_INF
-
-    max = np.max(log_u)
-    if max == NEG_INF:
-        return max
-    else:
-        return np.log(np.sum(np.exp(log_u - max))) + max
+from utils import NEG_INF, log_sum
 
 def convolve_naive(log_u, log_v):
     nu = len(log_u)
