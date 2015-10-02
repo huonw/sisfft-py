@@ -63,16 +63,9 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta):
                 accum = np.logaddexp(accum, conv)
     return accum
 
-def _threshold_factor(conv_len):
-    if conv_len > 2**5:
-        c = 13.5
-    else:
-        c = 16
-    return EPS * c * np.log2(conv_len)
-
 def _split(log_pmf, conv_len, alpha, delta):
     sort_idx = np.argsort(log_pmf)
-    raw_threshold = _threshold_factor(conv_len) * alpha
+    raw_threshold = utils.error_threshold_factor(conv_len) * alpha
     log_threshold = -np.log(raw_threshold) / 2.0
     log_delta = np.log(delta)
 
@@ -118,7 +111,7 @@ def _filtered_mult_ifft(fft1, normaliser1, fft2, normaliser2, true_conv_len):
     norm1 = np.linalg.norm(fft1)
     norm2 = np.linalg.norm(fft2)
 
-    threshold = _threshold_factor(true_conv_len) * norm1 * norm2
+    threshold = utils.error_threshold_factor(true_conv_len) * norm1 * norm2
 
     entire_conv = fft.ifft(fft1 * fft2)[:true_conv_len]
     # TODO: possibly need threshold * np.max(np.abs(entire_conv))?
