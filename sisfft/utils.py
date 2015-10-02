@@ -3,8 +3,12 @@ import numpy as np
 NEG_INF = -float('inf')
 EPS = np.finfo(float).eps
 
+def clamp(x, lo, hi):
+    return min(max(x, lo), hi)
+
 def log_min_pos(log_pmf):
     return log_pmf[log_pmf > NEG_INF].min()
+
 def log_dynamic_range(log_pmf):
     hi = log_sum(2.0 * log_pmf) / 2
     lo = log_min_pos(log_pmf)
@@ -22,9 +26,13 @@ def unshift(convolved, theta, *mgfs):
         c += multiplicity * mgf
     return c
 
+def logsubexp(log_x, log_y):
+    assert log_x >= log_y
+    return log_x + np.log(1.0 - np.exp(log_y - log_x))
+
 def logsub1exp(log_y):
-    assert log_y < 0.0
-    return np.log(1 - np.exp(log_y))
+    assert log_y <= 0.0
+    return np.log(1.0 - np.exp(log_y))
 
 def log_sum(log_u):
     """Compute `log(sum(exp(log_u)))`"""

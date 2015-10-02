@@ -30,7 +30,7 @@ def convolve_square(log_pmf, alpha, delta = None):
     return convolve(log_pmf, log_pmf, alpha, delta)
 
 def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta):
-    true_conv_len, fft_conv_len = _convolution_lengths(len(log_pmf1), len(log_pmf2))
+    true_conv_len, fft_conv_len = utils.pairwise_convolution_lengths(len(log_pmf1), len(log_pmf2))
 
     with timer('splitting'):
         splits1, normalisers1 = _split(log_pmf1, true_conv_len,
@@ -99,13 +99,6 @@ def _split(log_pmf, conv_len, alpha, delta):
         current_split[idx] = log_val - log_current_max
     splits.append(current_split)
     return np.array(splits), np.array(maxes)
-
-def _next_power_of_two(n):
-    return 2 ** int(np.ceil(np.log2(n)))
-
-def _convolution_lengths(a, b):
-    true = a + b - 1
-    return true, _next_power_of_two(true)
 
 def _filtered_mult_ifft(fft1, normaliser1, fft2, normaliser2, true_conv_len):
     norm1 = np.linalg.norm(fft1)
