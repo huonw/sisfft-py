@@ -85,7 +85,7 @@ for log10_alpha in range(1, 9 + 1):
                 setattr(ConvPower, name, test)
                 del test
 
-            for s0_ratio in [0.5, 0.9, 0.99]:
+            for s0_ratio in [0.01, 0.5, 0.9, 0.99]:
                 s0 = int(s0_ratio * utils.iterated_convolution_lengths(TEST_LENGTH, L)[0])
                 beta = 1/alpha
 
@@ -95,4 +95,3 @@ for log10_alpha in range(1, 9 + 1):
                 test.__name__ = name
                 setattr(Sisfft, name, test)
                 del test
-
