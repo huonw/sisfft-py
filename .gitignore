@@ -5,3 +5,4 @@
 \#*#
 *.log
 env
+/sisfft-cached-tests

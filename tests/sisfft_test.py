@@ -1,12 +1,16 @@
 import numpy as np
 import unittest
 import logging
+
+import cache
+
 from sisfft.timer import timer
 from sisfft import sisfft, utils, naive
 
 TEST_REPEATS = 1 # too slow
 TEST_LENGTH = 100
 
+@cache.disk_memo
 def power_naive(v, L):
     answer = np.array([1])
     power = v
@@ -20,6 +24,8 @@ def power_naive(v, L):
         L /= 2
         power = np.convolve(power, power)
     return answer
+
+@cache.disk_memo
 def log_power_naive(v, L):
     answer = np.array([1])
     power = v
