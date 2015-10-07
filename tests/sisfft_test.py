@@ -61,8 +61,10 @@ def sisfft_(self, beta, s0, L):
             hopeful = sisfft.pvalue(np.log(v), s0, L, beta)
         logging.debug('true pvalue %.20f', real)
         abs_diff = utils.logsubexp(max(real, hopeful), min(real, hopeful))
-        self.assertLessEqual(abs_diff, np.log(beta) + real,
-                             '%s isn\'t close to %s' % (hopeful, real))
+        threshold = np.log(beta) + real
+        self.assertLessEqual(abs_diff, threshold,
+                             '%s isn\'t close to %s (distance %s, should be less than %s)' \
+                             % (hopeful, real, abs_diff, threshold))
 
 class ConvPower(unittest.TestCase):
     pass
