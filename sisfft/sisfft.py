@@ -37,7 +37,16 @@ def conv_power(log_pmf, L, desired_alpha, desired_delta, accurate_bounds = True)
     return answer
 
 def pvalue(log_pmf, s0, L, desired_beta, accurate_bounds = True):
+    total_len, _ = utils.iterated_convolution_lengths(len(log_pmf), L)
+    if s0 >= total_len:
+        return utils.log1subexp(utils.log_sum(log_pmf))
+
     theta = _compute_theta(log_pmf, s0, L)
+    if theta < 0.0:
+        # turn things around! Compute 1 - sum(left tail) instead of sum(right tail).
+        p = pvalue(log_pmf[::-1], total_len - s0, L, desired_beta, accurate_bounds)
+        return utils.log1subexp(p)
+
     # TODO: too-large theta causes numerical instability, so this is a
     # huge hack
     theta = utils.clamp(theta, -THETA_LIMIT, THETA_LIMIT)
@@ -55,6 +64,9 @@ def pvalue(log_pmf, s0, L, desired_beta, accurate_bounds = True):
     return pval
 
 def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
+    # things aren't happy if this is negative
+    assert theta >= 0.0
+
     f0 = naive.power_fft(shifted_pmf, L - 1)
     error_estimate = np.log(utils.error_threshold_factor(len(f0)) * (L - 1))
 
@@ -90,6 +102,8 @@ def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
         # theta is negative, so we negate top and bottom, so
         # subtraction works
         frac = utils.logsubexp(-theta, 0.0) - utils.logsubexp(-factor * theta, 0.0)
+        # this shouldn't be reached at the moment
+        raise NotImplementedError()
 
     logging.debug('frac %s', frac)
     gamma = q + (theta * s0 - L * log_mgf) + frac + np.log(desired_beta / 2)
