@@ -42,8 +42,9 @@ def pvalue(log_pmf, s0, L, desired_beta):
     shifted_pmf, log_mgf = utils.shift(log_pmf, theta)
 
     alpha = 2.0 / desired_beta
-    delta = _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta)
-    logging.debug('theta %s, log_mgf %s, alpha %s, log delta %s', theta, log_mgf, alpha, np.log(delta))
+    log_delta = _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta)
+    logging.debug('theta %s, log_mgf %s, alpha %s, log delta %s', theta, log_mgf, alpha, log_delta)
+    delta = np.exp(log_delta)
 
     conv = conv_power(shifted_pmf, L, alpha, delta)
 
@@ -89,7 +90,7 @@ def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
         frac = utils.logsubexp(-theta, 0.0) - utils.logsubexp(-factor * theta, 0.0)
 
     logging.debug('frac %s', frac)
-    gamma = np.exp(q + (theta * s0 - L * log_mgf) + frac) * desired_beta / 2
+    gamma = q + (theta * s0 - L * log_mgf) + frac + np.log(desired_beta / 2)
     return gamma
 
 
