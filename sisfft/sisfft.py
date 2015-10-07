@@ -8,14 +8,16 @@ from utils import NEG_INF
 OPT_BOUND = 1e10
 THETA_LIMIT = 1e4
 
-def conv_power(log_pmf, L, desired_alpha, desired_delta):
+def conv_power(log_pmf, L, desired_alpha, desired_delta, accurate_bounds = True):
     if L == 0:
         return np.array([0.0])
     elif L == 1:
         return log_pmf
 
-    alpha = (L - 1) * desired_alpha
-    delta = desired_delta / (2.0 * (L - 1))
+    if accurate_bounds:
+        alpha, delta = _accurate_error_bounds(L, desired_alpha, desired_delta)
+    else:
+        alpha, delta = _estimate_error_bounds(L, desired_alpha, desired_delta)
 
     answer = np.array([0.0])
     pmf_power = log_pmf
@@ -34,7 +36,7 @@ def conv_power(log_pmf, L, desired_alpha, desired_delta):
 
     return answer
 
-def pvalue(log_pmf, s0, L, desired_beta):
+def pvalue(log_pmf, s0, L, desired_beta, accurate_bounds = True):
     theta = _compute_theta(log_pmf, s0, L)
     # TODO: too-large theta causes numerical instability, so this is a
     # huge hack
@@ -46,7 +48,7 @@ def pvalue(log_pmf, s0, L, desired_beta):
     logging.debug('theta %s, log_mgf %s, alpha %s, log delta %s', theta, log_mgf, alpha, log_delta)
     delta = np.exp(log_delta)
 
-    conv = conv_power(shifted_pmf, L, alpha, delta)
+    conv = conv_power(shifted_pmf, L, alpha, delta, accurate_bounds)
 
     pval = utils.log_sum(utils.unshift(conv, theta, (log_mgf, L))[s0:])
     logging.debug(' sis pvalue %.20f', pval)
@@ -99,3 +101,57 @@ def _compute_theta(log_pmf, s0, L):
     def f(theta):
         return utils.log_mgf(log_pmf, theta) - theta * s0L
     return optimize.fminbound(f, -OPT_BOUND, OPT_BOUND)
+
+def _estimate_error_bounds(L, beta, gamma):
+    alpha = 2.0 * (L - 1) / beta
+    delta = gamma / (2.0 * (L - 1))
+    return (alpha, delta)
+
+def _accurate_error_bounds(L, beta, gamma):
+    est_alpha, est_delta = _estimate_error_bounds(L, beta, gamma)
+
+    def compute_pairwise(inv_alpha, delta):
+        vals = [(0.0, 0.0)]
+        k = 1
+        while L >= k:
+            lastr, lastd = vals[-1]
+            r = lastr * (2 + lastr) * (1 + inv_alpha) + inv_alpha
+            d = 2 * (delta * (1 + lastr) + lastd)
+            vals.append((r, d))
+            k *= 2
+        return vals
+
+    def compute_iterated(alpha, delta):
+        inv_alpha = 1.0 / alpha
+        vals = compute_pairwise(inv_alpha, 0.0)
+        rbar = dbar = None
+        check = 0
+        for j, (r, d) in enumerate(vals):
+            if L & (1 << j) != 0:
+                check += 1 << j
+                if rbar is None:
+                    rbar = r
+                    dbar = d
+                else:
+                    # have to use the old rbar
+                    dbar = 2 * delta + dbar + d + delta * (rbar + r)
+                    rbar = inv_alpha + (1 + inv_alpha) * (rbar + r + rbar * r)
+        assert check == L
+        return rbar, dbar
+
+    def compute_rbar(alpha):
+        rbar, _ = compute_iterated(alpha, 0.0)
+        return rbar - beta / 2.0
+
+    alpha = optimize.fsolve(compute_rbar, est_alpha)
+
+    def compute_deltabar(delta):
+        _, dbar = compute_iterated(alpha, delta)
+        return dbar - gamma
+
+    delta = optimize.fsolve(compute_deltabar, est_delta)
+
+    logging.debug('computed accurate error bounds: alpha %f (vs. %f), delta %g (vs. %g)',
+                  alpha, est_alpha,
+                  delta, est_delta)
+    return (alpha, delta)
