@@ -70,7 +70,7 @@ def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
     f0 = naive.power_fft(shifted_pmf, L - 1)
     error_estimate = np.log(utils.error_threshold_factor(len(f0)) * (L - 1))
 
-    f_theta = np.where(f0 > error_estimate / desired_beta,
+    f_theta = np.where(f0 > error_estimate - np.log(desired_beta),
                        f0 - error_estimate,
                        NEG_INF)
 
