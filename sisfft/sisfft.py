@@ -44,8 +44,6 @@ def pvalue(log_pmf, s0, L, desired_beta):
     alpha = 2.0 / desired_beta
     delta = _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta)
     logging.debug('theta %s, log_mgf %s, alpha %s, log delta %s', theta, log_mgf, alpha, np.log(delta))
-    if s0 == 230:
-        import pdb; pdb.set_trace()
 
     conv = conv_power(shifted_pmf, L, alpha, delta)
 
