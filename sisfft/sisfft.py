@@ -81,9 +81,12 @@ def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
         # lim_{ theta -> 0 }
         frac = -np.log(factor)
     elif theta > 0.0:
-        frac = utils.logsub1exp(-theta) - utils.logsub1exp(-factor * theta)
+        # (1 - exp(-theta)) / (1 - exp(-factor theta))
+        frac = utils.log1subexp(-theta) - utils.log1subexp(-factor * theta)
     else:
-        frac = utils.logsubexp(-theta, 0.0) + (factor - 1) * theta - utils.logsubexp(-factor * theta, 0.0)
+        # theta is negative, so we negate top and bottom, so
+        # subtraction works
+        frac = utils.logsubexp(-theta, 0.0) - utils.logsubexp(-factor * theta, 0.0)
 
     logging.debug('frac %s', frac)
     gamma = np.exp(q + (theta * s0 - L * log_mgf) + frac) * desired_beta / 2

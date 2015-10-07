@@ -30,7 +30,7 @@ def logsubexp(log_x, log_y):
     assert log_x >= log_y
     return log_x + np.log(1.0 - np.exp(log_y - log_x))
 
-def logsub1exp(log_y):
+def log1subexp(log_y):
     assert log_y <= 0.0
     return np.log(1.0 - np.exp(log_y))
 
