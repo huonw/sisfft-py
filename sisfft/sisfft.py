@@ -15,9 +15,9 @@ def conv_power(log_pmf, L, desired_alpha, desired_delta, accurate_bounds = True)
         return log_pmf
 
     if accurate_bounds:
-        alpha, delta = _accurate_error_bounds(L, desired_alpha, desired_delta)
+        alpha, delta = _accurate_error_bounds(L, 1.0 / desired_alpha, desired_delta)
     else:
-        alpha, delta = _estimate_error_bounds(L, desired_alpha, desired_delta)
+        alpha, delta = _estimate_error_bounds(L, 1.0 / desired_alpha, desired_delta)
 
     answer = np.array([0.0])
     pmf_power = log_pmf
@@ -137,7 +137,7 @@ def _accurate_error_bounds(L, beta, gamma):
 
     def compute_iterated(alpha, delta):
         inv_alpha = 1.0 / alpha
-        vals = compute_pairwise(inv_alpha, 0.0)
+        vals = compute_pairwise(inv_alpha, delta)
         rbar = dbar = None
         check = 0
         for j, (r, d) in enumerate(vals):
@@ -157,15 +157,17 @@ def _accurate_error_bounds(L, beta, gamma):
         rbar, _ = compute_iterated(alpha, 0.0)
         return rbar - beta / 2.0
 
-    alpha = optimize.fsolve(compute_rbar, est_alpha)
+    alpha = optimize.fsolve(compute_rbar, est_alpha)[0]
 
     def compute_deltabar(delta):
         _, dbar = compute_iterated(alpha, delta)
         return dbar - gamma
 
-    delta = optimize.fsolve(compute_deltabar, est_delta)
+    delta = optimize.fsolve(compute_deltabar, est_delta)[0]
 
-    logging.debug('computed accurate error bounds: alpha %f (vs. %f), delta %g (vs. %g)',
+    logging.debug('computed accurate error bounds: alpha %f (vs. %f), delta %.10g (vs. %.10g)',
                   alpha, est_alpha,
                   delta, est_delta)
+    assert alpha >= est_alpha
+    assert delta <= est_delta
     return (alpha, delta)
