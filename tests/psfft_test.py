@@ -9,6 +9,7 @@ TEST_REPEATS = 20
 TEST_LENGTH = 100
 
 def psfft_(self, alpha, delta):
+    np.random.seed(1)
     for _ in range(0, TEST_REPEATS):
         v1 = np.random.rand(TEST_LENGTH)
         v1 /= v1.sum()
@@ -28,6 +29,7 @@ def psfft_(self, alpha, delta):
                         '%s\n%s' % (hopeful[not_between], real[not_between]))
 
 def psfft_square_(self, alpha, delta):
+    np.random.seed(1)
     for _ in range(0, TEST_REPEATS):
         v = np.random.rand(TEST_LENGTH)
         v /= v.sum()
@@ -45,6 +47,7 @@ def psfft_square_(self, alpha, delta):
                         '%s\n%s' % (hopeful[not_between], real[not_between]))
 
 def psfft_no_lower_bound_(self, alpha):
+    np.random.seed(1)
     for _ in range(0, TEST_REPEATS):
         v1 = np.random.rand(TEST_LENGTH)
         v1 /= v1.sum()

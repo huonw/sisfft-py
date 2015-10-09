@@ -41,6 +41,7 @@ def log_power_naive(v, L):
     return answer
 
 def conv_power_(self, alpha, delta, L):
+    np.random.seed(1)
     for _ in range(0, TEST_REPEATS):
         v = np.random.rand(TEST_LENGTH)
         v /= v.sum()
@@ -57,6 +58,7 @@ def conv_power_(self, alpha, delta, L):
         self.assertTrue(between.all(),
                         '%s\n%s' % (hopeful[not_between], real[not_between]))
 def sisfft_(self, beta, s0, L):
+    np.random.seed(1)
     for _ in range(0, TEST_REPEATS):
         v = np.random.rand(TEST_LENGTH)
         v /= v.sum()

@@ -8,6 +8,7 @@ TEST_LENGTH = 100
 
 class Naive(unittest.TestCase):
     def test_naive(self):
+        np.random.seed(1)
         for _ in range(0, TEST_REPEATS):
             v1 = np.random.rand(TEST_LENGTH)
             v2 = np.random.rand(TEST_LENGTH)
