@@ -56,7 +56,11 @@ def conv_power_(self, alpha, delta, L):
         between = (lower <= hopeful) & (hopeful <= upper)
         not_between = np.invert(between)
         self.assertTrue(between.all(),
-                        '%s\n%s' % (hopeful[not_between], real[not_between]))
+        '%s\n%s\n%s\n%s\n%s' % (
+                            len(not_between),
+                            hopeful[not_between],
+                            lower[not_between], real[not_between], upper[not_between]))
+
 def sisfft_(self, beta, s0, L):
     np.random.seed(1)
     for _ in range(0, TEST_REPEATS):

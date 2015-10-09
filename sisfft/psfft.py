@@ -4,12 +4,12 @@ from numpy import fft
 from scipy import optimize
 
 from timer import timer
-import unittest
+import logging
 
 import naive, utils
 from utils import NEG_INF, EPS
 
-COST_RATIO = 1e-10
+COST_RATIO = 1
 
 OPT_BOUND = 1e10
 
@@ -41,8 +41,16 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta):
     nc_cost = len(log_pmf1) * len(log_pmf2)
     Q = max(len(log_pmf1), len(log_pmf2))
     psfft_cost = len(splits1) * len(splits2) * Q * np.log2(Q)
+    scaled_cost = psfft_cost * COST_RATIO
+    psfft_is_better = scaled_cost < nc_cost
+    logging.debug('psFFT computed %s & %s splits, giving scaled cost %.2e (vs. NC cost %.2e). Using '
+                  'psFFT? %s',
+                  len(splits1), len(splits2),
+                  scaled_cost,
+                  nc_cost,
+                  psfft_is_better)
 
-    if psfft_cost * COST_RATIO > nc_cost:
+    if not psfft_is_better:
         with timer('naive'):
             return naive.convolve_naive(log_pmf1, log_pmf2)
 
