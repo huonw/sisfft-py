@@ -21,7 +21,7 @@ def conv_power(log_pmf, L, desired_alpha, desired_delta, accurate_bounds = True)
 
     answer = np.array([0.0])
     pmf_power = log_pmf
-    while L > 0:
+    while True:
         if L % 2 == 1:
             if len(answer) == 1:
                 answer = pmf_power
@@ -31,6 +31,8 @@ def conv_power(log_pmf, L, desired_alpha, desired_delta, accurate_bounds = True)
                 answer = psfft.convolve(x, y, alpha, delta)[:len(answer) + len(pmf_power) - 1]
 
         L /= 2
+        if L == 0:
+            break
         pmf_power = psfft.convolve_square(pmf_power, alpha, delta)
 
 
