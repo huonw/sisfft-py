@@ -28,11 +28,11 @@ def unshift(convolved, theta, *mgfs):
 
 def logsubexp(log_x, log_y):
     assert log_x >= log_y
-    return log_x + np.log(1.0 - np.exp(log_y - log_x))
+    return log_x + np.log1p(-np.exp(log_y - log_x))
 
 def log1subexp(log_y):
     assert log_y <= 0.0
-    return np.log(1.0 - np.exp(log_y))
+    return np.log1p(-np.exp(log_y))
 
 def log_sum(log_u):
     """Compute `log(sum(exp(log_u)))`"""
