@@ -21,6 +21,24 @@ def convolve_naive(log_u, log_v):
         log_c[k] = utils.log_sum(slice_u + slice_v)
     return log_c
 
+def power_naive(log_v, L):
+    answer = np.array([0.0])
+    if L == 0:
+        return answer
+
+    power = log_v
+    while True:
+        if L % 2 == 1:
+            if len(answer) == 1:
+                answer = power
+            else:
+                answer = convolve_naive(answer, power)
+
+        L /= 2
+        if L == 0:
+             break
+        power = convolve_naive(power, power)
+    return answer
 
 def power_fft(log_u, L):
     true_len, fft_len = utils.iterated_convolution_lengths(len(log_u), L)

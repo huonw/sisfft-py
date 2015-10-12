@@ -27,18 +27,7 @@ def power_naive(v, L):
 
 @cache.disk_memo
 def log_power_naive(v, L):
-    answer = np.array([1])
-    power = v
-    while L > 0:
-        if L % 2 == 1:
-            if len(answer) == 1:
-                answer = power
-            else:
-                answer = naive.convolve_naive(answer, power)
-
-        L /= 2
-        power = naive.convolve_naive(power, power)
-    return answer
+    return naive.power_naive(v, L)
 
 def conv_power_(self, alpha, delta, L):
     np.random.seed(1)
