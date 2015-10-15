@@ -39,11 +39,13 @@ def log_sum(log_u):
     if len(log_u) == 0:
         return NEG_INF
 
-    max = np.max(log_u)
+    maxi = np.argmax(log_u)
+    max = log_u[maxi]
     if max == NEG_INF:
         return max
     else:
-        return np.log(np.sum(np.exp(log_u - max))) + max
+        exp = np.exp(log_u - max)
+        return np.log1p(np.sum(exp[:maxi]) + np.sum(exp[maxi + 1:])) + max
 
 
 def log_mgf(log_pmf, theta):
