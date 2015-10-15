@@ -6,3 +6,5 @@
 *.log
 env
 /sisfft-cached-tests
+/accuracy-tests
+/dist
