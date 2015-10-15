@@ -44,7 +44,9 @@ def pvalue(log_pmf, s0, L, desired_beta, accurate_bounds = True):
         return NEG_INF
 
     theta = _compute_theta(log_pmf, s0, L)
+    logging.debug('raw theta %s', theta)
     if theta < 0.0:
+        logging.debug('    computing right tail')
         # turn things around! Compute 1 - sum(left tail) instead of sum(right tail).
         p = pvalue(log_pmf[::-1], total_len - s0, L, desired_beta, accurate_bounds)
         return utils.log1subexp(p)
@@ -109,7 +111,7 @@ def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
         # this shouldn't be reached at the moment
         raise NotImplementedError()
 
-    logging.debug('frac %s', frac)
+    logging.debug('q %s, frac %s, factor %s', q, frac, factor)
     gamma = q + (theta * s0 - L * log_mgf) + frac + np.log(desired_beta / 2)
     return gamma
 
@@ -169,7 +171,7 @@ def _accurate_error_bounds(L, beta, gamma):
 
     delta = optimize.fsolve(compute_deltabar, est_delta)[0]
 
-    logging.debug('computed accurate error bounds: alpha %f (vs. %f), delta %.10g (vs. %.10g)',
+    logging.debug('computed accurate error bounds: alpha %.20f (vs. %.20f), delta %.10g (vs. %.10g)',
                   alpha, est_alpha,
                   delta, est_delta)
     assert alpha >= est_alpha
