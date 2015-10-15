@@ -41,7 +41,7 @@ def conv_power(log_pmf, L, desired_alpha, desired_delta, accurate_bounds = True)
 def pvalue(log_pmf, s0, L, desired_beta, accurate_bounds = True):
     total_len, _ = utils.iterated_convolution_lengths(len(log_pmf), L)
     if s0 >= total_len:
-        return utils.log1subexp(utils.log_sum(log_pmf))
+        return NEG_INF
 
     theta = _compute_theta(log_pmf, s0, L)
     if theta < 0.0:
