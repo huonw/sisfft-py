@@ -69,12 +69,14 @@ def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
     # things aren't happy if this is negative
     assert theta >= 0.0
 
-    f0 = naive.power_fft(shifted_pmf, L - 1)
-    error_estimate = np.log(utils.error_threshold_factor(len(f0)) * (L - 1))
+    log_f0, fft_len = naive.power_fft(shifted_pmf, L - 1)
+    f0 = np.exp(log_f0)
+    error_estimate = utils.error_threshold_factor(fft_len) * (L - 1)
 
-    f_theta = np.where(f0 > error_estimate - np.log(desired_beta),
+    f_theta = np.where(f0 > error_estimate / desired_beta,
                        f0 - error_estimate,
-                       NEG_INF)
+                       0.0)
+    f_theta = np.log(f_theta)
 
     tail_sums = np.zeros_like(log_pmf)
     tail_sums[-1] = log_pmf[-1]
@@ -83,13 +85,13 @@ def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
     for i in range(1, Q):
         tail_sums[-1 - i] = np.logaddexp(log_pmf[-1 - i], tail_sums[-i])
 
-    limit = len(f0)
+    limit = len(f_theta)
     low = max(s0 - Q1, 0)
     k1 = np.arange(low, min(s0, limit))
-    q1 = utils.log_sum(f0[k1] + (-k1 * theta + (L - 1) * log_mgf) + tail_sums[s0 - k1])
+    q1 = utils.log_sum(f_theta[k1] + (-k1 * theta + (L - 1) * log_mgf) + tail_sums[s0 - k1])
 
     k2 = np.arange(min(s0, limit), limit)
-    q2 = utils.log_sum(f0[k2] + (-k2 * theta + (L - 1) * log_mgf))
+    q2 = utils.log_sum(f_theta[k2] + (-k2 * theta + (L - 1) * log_mgf))
     q = np.logaddexp(q1, q2)
 
     factor = L * Q1 - s0 + 1

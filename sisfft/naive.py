@@ -44,4 +44,4 @@ def power_fft(log_u, L):
     true_len, fft_len = utils.iterated_convolution_lengths(len(log_u), L)
     fft_ = fft.fft(np.exp(log_u), n = fft_len)
     conv = fft.ifft(fft_**L)[:true_len]
-    return np.log(np.abs(conv))
+    return np.log(np.abs(conv)), fft_len
