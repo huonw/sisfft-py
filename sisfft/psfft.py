@@ -33,9 +33,9 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta):
     true_conv_len, fft_conv_len = utils.pairwise_convolution_lengths(len(log_pmf1), len(log_pmf2))
 
     with timer('splitting'):
-        splits1, normalisers1 = _split(log_pmf1, true_conv_len,
+        splits1, normalisers1 = _split(log_pmf1, fft_conv_len,
                                        alpha, delta)
-        splits2, normalisers2 = _split(log_pmf2, true_conv_len,
+        splits2, normalisers2 = _split(log_pmf2, fft_conv_len,
                                        alpha, delta)
 
     nc_cost = len(log_pmf1) * len(log_pmf2)
@@ -67,13 +67,14 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta):
                 fft2 = ffts2[j, :]
                 conv = _filtered_mult_ifft(fft1, normaliser1,
                                            fft2, normaliser2,
-                                           true_conv_len)
+                                           true_conv_len,
+                                           fft_conv_len)
                 accum = np.logaddexp(accum, conv)
     return accum
 
-def _split(log_pmf, conv_len, alpha, delta):
+def _split(log_pmf, fft_conv_len, alpha, delta):
     sort_idx = np.argsort(log_pmf)
-    raw_threshold = utils.error_threshold_factor(conv_len) * alpha
+    raw_threshold = utils.error_threshold_factor(fft_conv_len) * alpha
     log_threshold = -np.log(raw_threshold) / 2.0
     log_delta = np.log(delta)
 
@@ -108,17 +109,20 @@ def _split(log_pmf, conv_len, alpha, delta):
     splits.append(current_split)
     return np.array(splits), np.array(maxes)
 
-def _filtered_mult_ifft(fft1, normaliser1, fft2, normaliser2, true_conv_len):
+def _filtered_mult_ifft(fft1, normaliser1, fft2, normaliser2,
+                        true_conv_len, fft_conv_len):
     norm1 = np.linalg.norm(fft1)
     norm2 = np.linalg.norm(fft2)
 
-    threshold = utils.error_threshold_factor(true_conv_len) * norm1 * norm2
+    # norm1 & norm2 are sqrt(fft_conv_len) * norm(p) (resp. norm(q)),
+    # i.e. too large by a factor of sqrt(fft_conv_len) each.
+    threshold = utils.error_threshold_factor(fft_conv_len) * norm1 * norm2 / fft_conv_len
 
     entire_conv = fft.ifft(fft1 * fft2)[:true_conv_len]
-    # TODO: possibly need threshold * np.max(np.abs(entire_conv))?
     filtered = np.where(np.abs(entire_conv) > threshold,
-                        np.log(np.real(entire_conv)),
-                        NEG_INF)
+                        np.real(entire_conv),
+                        0.0)
+    filtered = np.log(filtered)
     filtered += normaliser1 + normaliser2
     return filtered
 
