@@ -48,7 +48,7 @@ def multier_scales(length):
     return v
 
 def shaped_multi_scales(length):
-    return random_multier_scales(length) + random_quadratics(length)
+    return multier_scales(length) + quadratic(length)
 
 def write_header(f):
     print('L,s0,beta,NC_pvalue,sisFFT_pvalue,rel_error,failed', file = f)
@@ -59,7 +59,7 @@ def write_results(f, L, s0, beta, NC_pvalue, sisFFT_pvalue):
                                       min(NC_pvalue, sisFFT_pvalue))
     rel_error = abs_diff - NC_pvalue
     failed = rel_error > np.log(beta)
-    s = '{L},{s0},{beta},{NC_pvalue:.20g},{sisFFT_pvalue:.20g},{rel_error},{failed}'.format(
+    s = '{L},{s0},{beta},{NC_pvalue:.10g},{sisFFT_pvalue:.10g},{rel_error},{failed}'.format(
         L = L, s0 = s0, beta = beta,
         NC_pvalue = NC_pvalue, sisFFT_pvalue = sisFFT_pvalue,
         rel_error = rel_error,
