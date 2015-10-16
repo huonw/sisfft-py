@@ -38,19 +38,9 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta):
         splits2, normalisers2 = _split(log_pmf2, fft_conv_len,
                                        alpha, delta)
 
-    nc_cost = len(log_pmf1) * len(log_pmf2)
-    Q = max(len(log_pmf1), len(log_pmf2))
-    psfft_cost = len(splits1) * len(splits2) * Q * np.log2(Q)
-    scaled_cost = psfft_cost * COST_RATIO
-    psfft_is_better = scaled_cost < nc_cost
-    logging.debug('psFFT computed %s & %s splits, giving scaled cost %.2e (vs. NC cost %.2e). Using '
-                  'psFFT? %s',
-                  len(splits1), len(splits2),
-                  scaled_cost,
-                  nc_cost,
-                  psfft_is_better)
-
-    if not psfft_is_better:
+    nc_is_better = _is_nc_faster(len(log_pmf1), len(splits1),
+                                 len(log_pmf2), len(splits2))
+    if nc_is_better:
         with timer('naive'):
             return naive.convolve_naive(log_pmf1, log_pmf2)
 
@@ -108,6 +98,22 @@ def _split(log_pmf, fft_conv_len, alpha, delta):
         current_split[idx] = log_val - log_current_max
     splits.append(current_split)
     return np.array(splits), np.array(maxes)
+
+def _is_nc_faster(len1, splits1,
+                  len2, splits2):
+    nc_cost = len1 * len2
+    Q = max(len1, len2)
+    psfft_cost = splits1 * splits2 * Q * np.log2(Q)
+    scaled_cost = psfft_cost * COST_RATIO
+    nc_is_better = scaled_cost > nc_cost
+    logging.debug('psFFT computed %s & %s splits, giving scaled cost %.2e (vs. NC cost %.2e). Using '
+                  'psFFT? %s',
+                  splits1, splits2,
+                  scaled_cost,
+                  nc_cost,
+                  not nc_is_better)
+    return nc_is_better
+
 
 def _filtered_mult_ifft(fft1, normaliser1, fft2, normaliser2,
                         true_conv_len, fft_conv_len):
