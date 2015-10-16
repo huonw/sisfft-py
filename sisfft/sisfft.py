@@ -22,18 +22,25 @@ def conv_power(log_pmf, L, desired_alpha, desired_delta, accurate_bounds = True)
     answer = np.array([0.0])
     pmf_power = log_pmf
     while True:
-        if L % 2 == 1:
+        need_to_add = L % 2 == 1
+        L /= 2
+        need_to_square = L > 0
+        squared = False
+
+        if need_to_add:
             if len(answer) == 1:
                 answer = pmf_power
             else:
-                x = pmf_power
-                y = answer
-                answer = psfft.convolve(x, y, alpha, delta)[:len(answer) + len(pmf_power) - 1]
+                if need_to_square:
+                    answer, pmf_power = psfft.convolve_and_square(pmf_power, answer, alpha, delta)
+                    squared = True
+                else:
+                    answer = psfft.convolve(pmf_power, answer, alpha, delta)
 
-        L /= 2
-        if L == 0:
+        if not need_to_square:
             break
-        pmf_power = psfft.convolve_square(pmf_power, alpha, delta)
+        if not squared:
+            pmf_power = psfft.convolve_square(pmf_power, alpha, delta)
 
 
     return answer
