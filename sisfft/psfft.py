@@ -77,34 +77,42 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
                                                                            len(log_pmf1))
 
     can_reuse_pairwise = pairwise and fft_conv_len == fft_conv_len_sq
+    len1 = len(log_pmf1)
+    len2 = len(log_pmf2)
 
     with timer('splitting'):
         if pairwise:
             splits1, normalisers1 = _split(log_pmf1, fft_conv_len,
-                                           alpha, delta)
-            splits2, normalisers2 = _split(log_pmf2, fft_conv_len,
-                                           alpha, delta)
+                                           alpha, delta,
+                                           _split_limit(len1, len2, None, COST_RATIO))
+            if splits1 is not None:
+                splits2, normalisers2 = _split(log_pmf2, fft_conv_len,
+                                               alpha, delta,
+                                               _split_limit(len1, len2, len(splits1), COST_RATIO))
+            else:
+                splits2, normalisers2 = None, None
 
         if can_reuse_pairwise:
             splits1_sq, normalisers1_sq = splits1, normalisers1
         else:
             # different numbers so we need to re-split
             splits1_sq, normalisers1_sq = _split(log_pmf1, fft_conv_len_sq,
-                                                 alpha, delta)
+                                                 alpha, delta,
+                                                 _split_limit(len1, None, None, COST_RATIO))
 
 
     nc = nc_sq = None
 
     if pairwise:
-        nc_is_better = _is_nc_faster(len(log_pmf1), len(splits1),
-                                     len(log_pmf2), len(splits2),
+        nc_is_better = _is_nc_faster(len(log_pmf1), splits1,
+                                     len(log_pmf2), splits2,
                                      COST_RATIO)
         if nc_is_better:
             with timer('naive'):
                 nc = naive.convolve_naive(log_pmf1, log_pmf2)
     if square_1:
-        nc_is_better_sq = _is_nc_faster(len(log_pmf1), len(splits1_sq),
-                                        len(log_pmf1), len(splits1_sq),
+        nc_is_better_sq = _is_nc_faster(len(log_pmf1), splits1_sq,
+                                        len(log_pmf1), splits1_sq,
                                         COST_RATIO_SQUARE)
         if nc_is_better_sq:
             with timer('naive'):
@@ -172,7 +180,8 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
     if square_1: assert len(accum_sq) == true_conv_len_sq
     return accum, accum_sq
 
-def _split(log_pmf, fft_conv_len, alpha, delta):
+def _split(log_pmf, fft_conv_len, alpha, delta,
+           split_limit):
     sort_idx = np.argsort(log_pmf)
     raw_threshold = utils.error_threshold_factor(fft_conv_len) * alpha
     log_threshold = -np.log(raw_threshold) / 2.0
@@ -187,7 +196,7 @@ def _split(log_pmf, fft_conv_len, alpha, delta):
 
     maxes = [log_current_max]
     splits = []
-    for idx in sort_idx[::-1]:
+    for i, idx in enumerate(sort_idx[::-1]):
         log_val = log_pmf[idx]
         if log_val <= log_delta:
             break
@@ -205,24 +214,51 @@ def _split(log_pmf, fft_conv_len, alpha, delta):
             log_current_norm_sq = log_val * 2.0
             log_current_max = log_val
 
+            if len(splits) + 1 > split_limit:
+                logging.debug('bailing out of splits after %s elements (%s splits)',
+                              i + 1, len(splits) + 1)
+                return None, None
+
         current_split[idx] = log_val - log_current_max
     splits.append(current_split)
     return np.array(splits), np.array(maxes)
+
+def _split_limit(len1, len2, splits1, cost_ratio):
+    nc_cost = len1 * len1 if len2 is None else len1 * len2
+    Q = max(len1, len2)
+    split_ratio = nc_cost / (Q * np.log2(Q) * cost_ratio)
+    if len2 is None:
+        # we're squaring, so both sides have the same number of splits
+        lim = np.sqrt(split_ratio)
+    else:
+        # worst case the RHS will be 1
+        other_split = 1 if splits1 is None else splits1
+        lim = split_ratio / other_split
+    logging.debug('computed split limit for %s %s %s %s as %s',
+                  len1, len2, splits1, cost_ratio, lim)
+    return lim
 
 def _is_nc_faster(len1, splits1,
                   len2, splits2,
                   cost_ratio):
     nc_cost = len1 * len2
     Q = max(len1, len2)
-    psfft_cost = splits1 * splits2 * Q * np.log2(Q)
-    scaled_cost = psfft_cost * cost_ratio
-    nc_is_better = scaled_cost > nc_cost
-    logging.debug('psFFT computed %s & %s splits, giving scaled cost %.2e (vs. NC cost %.2e). Using '
-                  'psFFT? %s',
-                  splits1, splits2,
-                  scaled_cost,
-                  nc_cost,
-                  not nc_is_better)
+
+    if splits1 is None or splits2 is None:
+        nc_is_better = True
+        logging.debug('psFFT didn\'t compute all splits (%s, %s). Using psFFT? False',
+                      splits1, splits2)
+    else:
+        psfft_cost = len(splits1) * len(splits2) * Q * np.log2(Q)
+        scaled_cost = psfft_cost * cost_ratio
+        nc_is_better = scaled_cost > nc_cost
+
+        logging.debug('psFFT computed %s & %s splits, giving scaled cost %.2e (vs. NC cost %.2e). '
+                       'Using psFFT? %s',
+                      len(splits1), len(splits2),
+                      scaled_cost,
+                      nc_cost,
+                      not nc_is_better)
     return nc_is_better
 
 
