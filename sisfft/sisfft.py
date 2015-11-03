@@ -82,7 +82,7 @@ def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
     f0 = np.exp(log_f0)
     error_estimate = utils.error_threshold_factor(fft_len) * (L - 1)
 
-    f_theta = np.where(f0 > error_estimate / desired_beta,
+    f_theta = np.where(f0 > error_estimate,
                        f0 - error_estimate,
                        0.0)
     f_theta = np.log(f_theta)
