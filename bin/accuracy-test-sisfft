@@ -54,7 +54,9 @@ def write_header(f):
     print('L,s0,beta,NC_pvalue,sisFFT_pvalue,rel_error,failed', file = f)
     f.flush()
 
+print_count = 0
 def write_results(f, L, s0, beta, NC_pvalue, sisFFT_pvalue):
+    global print_count
     abs_diff = sisfft.utils.logsubexp(max(NC_pvalue, sisFFT_pvalue),
                                       min(NC_pvalue, sisFFT_pvalue))
     rel_error = abs_diff - NC_pvalue
@@ -66,7 +68,9 @@ def write_results(f, L, s0, beta, NC_pvalue, sisFFT_pvalue):
         failed = 1 if failed else 0
     )
     print(s, file=f)
-    f.flush()
+    print_count += 1
+    if print_count % 100 == 0:
+        f.flush()
     print(s)
     return failed
 
