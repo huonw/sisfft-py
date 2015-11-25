@@ -27,7 +27,9 @@ def convolve(log_pmf1, log_pmf2, alpha, delta = None):
         theta = _compute_theta(log_pmf1, log_pmf2)
         s1, log_mgf1 = utils.shift(log_pmf1, theta)
         s2, log_mgf2 = utils.shift(log_pmf2, theta)
-        convolved = _psfft_noshift(s1, s2, alpha, NEG_INF)[0]
+        convolved = _psfft_noshift(s1, s2, alpha, NEG_INF,
+                                   pairwise = True,
+                                   square_1 = False)[0]
         return utils.unshift(convolved, theta, (log_mgf1, 1), (log_mgf2, 1))
 
 def convolve_square(log_pmf, alpha, delta = None):
