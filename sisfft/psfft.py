@@ -136,11 +136,16 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
         if need_to_pairwise:
             splits1, normalisers1 = _split(log_pmf1, fft_conv_len,
                                            alpha, delta,
-                                           _split_limit(len1, len2, None, COST_RATIO))
+                                           _split_limit(len1, len2, None,
+                                                        len(bad_places),
+                                                        COST_RATIO))
             if splits1 is not None:
                 splits2, normalisers2 = _split(log_pmf2, fft_conv_len,
                                                alpha, delta,
-                                               _split_limit(len1, len2, len(splits1), COST_RATIO))
+                                               _split_limit(len1, len2,
+                                                            len(splits1),
+                                                            len(bad_places),
+                                                            COST_RATIO))
             else:
                 splits2, normalisers2 = None, None
 
@@ -151,7 +156,9 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
                 # different numbers so we need to re-split
                 splits1_sq, normalisers1_sq = _split(log_pmf1, fft_conv_len_sq,
                                                      alpha, delta,
-                                                     _split_limit(len1, None, None, COST_RATIO))
+                                                     _split_limit(len1, None, None,
+                                                                  len(bad_places_sq),
+                                                                  COST_RATIO_SQUARE))
 
     if need_to_pairwise:
         nc_is_better = _is_nc_faster(len(log_pmf1), splits1,
@@ -319,9 +326,9 @@ def _split(log_pmf, fft_conv_len, alpha, delta,
     splits.append(current_split)
     return np.array(splits), np.array(maxes)
 
-def _split_limit(len1, len2, splits1, cost_ratio):
-    nc_cost = len1 * len1 if len2 is None else len1 * len2
-    Q = max(len1, len2)
+def _split_limit(len1, len2, splits1, len_bad_places, cost_ratio):
+    Q = max(len1, len2) if len2 is not None else len1
+    nc_cost = Q * len_bad_places
     split_ratio = nc_cost / (Q * np.log2(Q) * cost_ratio)
     if len2 is None:
         # we're squaring, so both sides have the same number of splits
@@ -330,8 +337,8 @@ def _split_limit(len1, len2, splits1, cost_ratio):
         # worst case the RHS will be 1
         other_split = 1 if splits1 is None else splits1
         lim = split_ratio / other_split
-    logging.debug('computed split limit for %s %s %s %s as %s',
-                  len1, len2, splits1, cost_ratio, lim)
+    logging.debug('computed split limit for %s %s %s %s %s as %s',
+                  len1, len2, splits1, len_bad_places, cost_ratio, lim)
     return lim
 
 def _splits_to_len(splits):
