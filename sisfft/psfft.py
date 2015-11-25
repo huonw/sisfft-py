@@ -9,12 +9,15 @@ import logging
 import naive, utils
 from utils import NEG_INF, EPS
 
-COST_RATIO = 0.5
+COST_RATIO = 1.5
 # when we square we do approximately half the work of a general
 # convolution.
 COST_RATIO_SQUARE = COST_RATIO * 0.5
 
 OPT_BOUND = 1e10
+
+ESTIMATE_ONE_SPLIT = 1
+ESTIMATE_TWO_SPLITS = 2
 
 def convolve(log_pmf1, log_pmf2, alpha, delta = None):
     # assert len(log_pmf1) == len(log_pmf2)
@@ -82,8 +85,55 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
     len1 = len(log_pmf1)
     len2 = len(log_pmf2)
 
-    with timer('splitting'):
+    with timer('initial fft'):
+        pmf1 = np.exp(log_pmf1)
+        fft1 = fft.fft(pmf1, n = fft_conv_len)
         if pairwise:
+            direct, bad_places = _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2,
+                                                  true_conv_len, fft_conv_len,
+                                                  alpha)
+
+        if square_1:
+            if can_reuse_pairwise:
+                direct_sq, bad_places_sq = _direct_fft_conv(log_pmf1, pmf1, fft1, None,
+                                                            true_conv_len_sq, fft_conv_len_sq,
+                                                            alpha)
+            else:
+                fft1_sq = fft.fft(pmf1, n = fft_conv_len_sq)
+                direct_sq, bad_places_sq = _direct_fft_conv(log_pmf1, pmf1, fft1_sq, None,
+                                                            true_conv_len_sq, fft_conv_len_sq,
+                                                            alpha)
+    answer = answer_sq = None
+
+    if pairwise:
+        nc_is_better = _is_nc_faster(len(log_pmf1), ESTIMATE_ONE_SPLIT,
+                                     len(log_pmf2), ESTIMATE_TWO_SPLITS,
+                                     len(bad_places),
+                                     COST_RATIO)
+        if nc_is_better:
+            with timer('naive'):
+                answer = direct
+                naive.convolve_naive_into(answer, bad_places,
+                                          log_pmf1, log_pmf2)
+    if square_1:
+        nc_is_better = _is_nc_faster(len(log_pmf1), ESTIMATE_TWO_SPLITS,
+                                     len(log_pmf1), ESTIMATE_TWO_SPLITS,
+                                     len(bad_places_sq),
+                                     COST_RATIO_SQUARE)
+        if nc_is_better:
+            with timer('naive'):
+                answer_sq = direct_sq
+                naive.convolve_naive_into(answer_sq, bad_places_sq,
+                                          log_pmf1, log_pmf1)
+
+
+    need_to_pairwise = answer is None and pairwise
+    need_to_square = answer_sq is None and square_1
+    # we can only reuse it if it is actually computed
+    can_reuse_pairwise &= need_to_pairwise
+
+    with timer('splitting'):
+        if need_to_pairwise:
             splits1, normalisers1 = _split(log_pmf1, fft_conv_len,
                                            alpha, delta,
                                            _split_limit(len1, len2, None, COST_RATIO))
@@ -94,34 +144,38 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
             else:
                 splits2, normalisers2 = None, None
 
-        if can_reuse_pairwise:
-            splits1_sq, normalisers1_sq = splits1, normalisers1
-        else:
-            # different numbers so we need to re-split
-            splits1_sq, normalisers1_sq = _split(log_pmf1, fft_conv_len_sq,
-                                                 alpha, delta,
-                                                 _split_limit(len1, None, None, COST_RATIO))
+        if need_to_square:
+            if can_reuse_pairwise:
+                splits1_sq, normalisers1_sq = splits1, normalisers1
+            else:
+                # different numbers so we need to re-split
+                splits1_sq, normalisers1_sq = _split(log_pmf1, fft_conv_len_sq,
+                                                     alpha, delta,
+                                                     _split_limit(len1, None, None, COST_RATIO))
 
-
-    nc = nc_sq = None
-
-    if pairwise:
+    if need_to_pairwise:
         nc_is_better = _is_nc_faster(len(log_pmf1), splits1,
                                      len(log_pmf2), splits2,
+                                     len(bad_places),
                                      COST_RATIO)
         if nc_is_better:
             with timer('naive'):
-                nc = naive.convolve_naive(log_pmf1, log_pmf2)
-    if square_1:
+                answer = direct
+                naive.convolve_naive_into(answer, bad_places,
+                                          log_pmf1, log_pmf2)
+    if need_to_square:
         nc_is_better_sq = _is_nc_faster(len(log_pmf1), splits1_sq,
                                         len(log_pmf1), splits1_sq,
+                                        len(bad_places_sq),
                                         COST_RATIO_SQUARE)
         if nc_is_better_sq:
             with timer('naive'):
-                nc_sq = naive.convolve_naive(log_pmf1, log_pmf1)
+                answer_sq = direct_sq
+                naive.convolve_naive_into(answer_sq, bad_places_sq,
+                                          log_pmf1, log_pmf1)
 
-    need_to_pairwise = nc is None and pairwise
-    need_to_square = nc_sq is None and square_1
+    need_to_pairwise &= answer is None
+    need_to_square &= answer_sq is None
     # we can only reuse it if it is actually computed
     can_reuse_pairwise &= need_to_pairwise
 
@@ -150,8 +204,7 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
                                                true_conv_len,
                                                fft_conv_len)
                     accum = np.logaddexp(accum, conv)
-    else:
-        accum = nc
+        answer = accum
 
     if need_to_square:
         accum_sq = np.repeat(NEG_INF, true_conv_len_sq)
@@ -175,12 +228,53 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
                     # so we need to double
                     conv += np.log(2)
                     accum_sq = np.logaddexp(accum_sq, conv)
-    else:
-        accum_sq = nc_sq
+        answer_sq = accum_sq
 
-    if pairwise: assert len(accum) == true_conv_len
-    if square_1: assert len(accum_sq) == true_conv_len_sq
-    return accum, accum_sq
+    if pairwise: assert len(answer) == true_conv_len
+    if square_1: assert len(answer_sq) == true_conv_len_sq
+    return answer, answer_sq
+
+def _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2, true_conv_len, fft_conv_len, alpha):
+    if log_pmf2 is None:
+        norms = np.linalg.norm(pmf1)**2
+        fft_conv = fft1**2
+    else:
+        pmf2 = np.exp(log_pmf2)
+        fft2 = fft.fft(pmf2, n = fft_conv_len)
+        norms = np.linalg.norm(pmf1) * np.linalg.norm(pmf2)
+        fft_conv = fft1 * fft2
+
+    raw_conv = np.abs(fft.ifft(fft_conv)[:true_conv_len])
+    threshold = utils.error_threshold_factor(fft_conv_len) * (alpha + 1) * norms
+
+    conv_below_threshold = raw_conv <= threshold
+    bad_places = np.where(conv_below_threshold)[0]
+
+    log_conv = np.log(raw_conv)
+
+    # the convolution is totally right, already: no need to consult
+    # the support
+    if len(bad_places) == 0:
+        return log_conv, bad_places
+
+    # quickly compute the support; this is accurate for vectors up to
+    # length approximately 1e14
+    support1 = log_pmf1 > NEG_INF
+    fft_support1 = fft.fft(support1, n = fft_conv_len)
+    if log_pmf2 is None:
+        fft_support = fft_support1**2
+    else:
+        support2 = log_pmf2 > NEG_INF
+        fft_support2 = fft.fft(support2, n = fft_conv_len)
+        fft_support = fft_support1 * fft_support2
+
+    raw_support = np.abs(fft.ifft(fft_support)[:true_conv_len])
+    Q = len(log_pmf1) if log_pmf2 is None else max(len(log_pmf1), len(log_pmf2))
+    threshold = utils.error_threshold_factor(fft_conv_len) * 2 * Q
+    zeros = raw_support <= threshold
+    log_conv[zeros] = NEG_INF
+    bad_places = np.where(np.logical_not(zeros) & conv_below_threshold)[0]
+    return log_conv, bad_places
 
 def _split(log_pmf, fft_conv_len, alpha, delta,
            split_limit):
@@ -240,24 +334,35 @@ def _split_limit(len1, len2, splits1, cost_ratio):
                   len1, len2, splits1, cost_ratio, lim)
     return lim
 
+def _splits_to_len(splits):
+    if isinstance(splits, int) and splits in (1, 2):
+        return splits, 'post-FFT-C estimated'
+    else:
+        return len(splits), 'psFFT computed'
 def _is_nc_faster(len1, splits1,
                   len2, splits2,
+                  len_bad_places,
                   cost_ratio):
-    nc_cost = len1 * len2
     Q = max(len1, len2)
+    nc_cost = min(Q * len_bad_places, len1 * len2)
 
     if splits1 is None or splits2 is None:
         nc_is_better = True
         logging.debug('psFFT didn\'t compute all splits (%s, %s). Using psFFT? False',
                       splits1, splits2)
     else:
-        psfft_cost = len(splits1) * len(splits2) * Q * np.log2(Q)
+        len1, msg = _splits_to_len(splits1)
+        len2, _ = _splits_to_len(splits2)
+        psfft_cost = len1 * len2 * Q * np.log2(Q)
         scaled_cost = psfft_cost * cost_ratio
         nc_is_better = scaled_cost > nc_cost
 
-        logging.debug('psFFT computed %s & %s splits, giving scaled cost %.2e (vs. NC cost %.2e). '
-                       'Using psFFT? %s',
-                      len(splits1), len(splits2),
+        logging.debug('%s %d & %d splits, with %d locations to recompute, '
+                      'giving scaled cost %.2e (vs. NC cost %.2e). '
+                      'Using psFFT? %s',
+                      msg,
+                      len1, len2,
+                      len_bad_places,
                       scaled_cost,
                       nc_cost,
                       not nc_is_better)

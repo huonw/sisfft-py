@@ -12,14 +12,21 @@ def convolve_naive(log_u, log_v):
     nc = nu + nv - 1
 
     log_c = np.repeat(NEG_INF, nc)
+    convolve_naive_into(log_c, range(0, nc), log_u, log_v)
+    return log_c
 
-    for k in range(0, nc):
+def convolve_naive_into(log_c, locations, log_u, log_v):
+    nu = len(log_u)
+    nv = len(log_v)
+    nc = nu + nv - 1
+    assert len(log_c) == nc
+
+    for k in locations:
         low_j = max(0, k - nv + 1)
         hi_j = min(k + 1, nu)
         slice_u = log_u[low_j:hi_j]
         slice_v = log_v[k - low_j:k - hi_j:-1] if k - hi_j != -1 else log_v[k - low_j::-1]
         log_c[k] = utils.log_sum(slice_u + slice_v)
-    return log_c
 
 def power_naive(log_v, L):
     answer = np.array([0.0])
