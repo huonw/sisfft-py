@@ -28,6 +28,13 @@ def convolve_naive_into(log_c, locations, log_u, log_v):
         slice_v = log_v[k - low_j:k - hi_j:-1] if k - hi_j != -1 else log_v[k - low_j::-1]
         log_c[k] = utils.log_sum(slice_u + slice_v)
 
+def convolve_fft(log_u, log_v):
+    true_len, fft_len = utils.pairwise_convolution_lengths(len(log_u), len(log_v))
+    fft1 = fft.fft(np.exp(log_u), n = fft_len)
+    fft2 = fft.fft(np.exp(log_v), n = fft_len)
+    conv = fft.ifft(fft1 * fft2)[:true_len]
+    return np.log(np.abs(conv))
+
 def power_naive(log_v, L):
     answer = np.array([0.0])
     if L == 0:

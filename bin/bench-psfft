@@ -1,0 +1,179 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+import sisfft
+import argparse
+import numpy
+np = numpy
+import math
+import logging
+from os import path
+from datetime import datetime
+from timeit import default_timer
+
+DEFAULT_TIME_LIMIT = 300
+DEFAULT_LENGTH = '(2**x for x in range(1, 24))'
+DEFAULT_BETA = 0.001
+
+# predefined pmfs/vectors
+def binomial(n):
+    assert n >= 2
+    x = np.zeros(n)
+    x[:2] = 0.5
+    return x
+def sin_xs(n):
+    return np.linspace(0, 3*np.pi, n)
+def deep_sinusoid(n):
+    x = sin_xs(n)
+    return 1000*np.sin(x) - 100*x
+def medium_sinusoid(n):
+    x = sin_xs(n)
+    return 100*np.sin(x) - 25*x
+def shallow_sinusoid(n):
+    x = sin_xs(n)
+    return 60*np.sin(x) - 10*x
+def very_shallow_sinusoid(n):
+    x = sin_xs(n)
+    return np.sin(x) - x / 4.0
+
+def q_xs(n):
+    return np.arange(float(n))
+def quadratic(n):
+    x = q_xs(n)
+    return (20 * x)**2 - 50*(x+1)
+def shallow_quadratic(n):
+    x = q_xs(n)
+    return 3 * x * (8 - x)
+def other_quadratic(n):
+    x = q_xs(n)
+    return -(5 * x)**2 + 8*(x + 1)
+
+def truly_uniform(n):
+    return np.log(np.random.random(n))
+
+def write_header(f):
+    print('L,beta,NC_time,psFFT_time,FFTC_time,ratio', file = f)
+    f.flush()
+
+def write_results(f, n, beta, nc_time, psfftc_time, fftc_time):
+    ratio = nc_time / psfftc_time
+
+    s = '{L:d},{beta},{nc},{psfftc},{fftc},{ratio}'.format(
+        L = n,
+        beta = beta,
+        nc = nc_time,
+        psfftc = psfftc_time,
+        fftc = fftc_time,
+        ratio = ratio)
+    print(s)
+    print(s, file = f)
+    f.flush()
+
+def timeit(done, func):
+    if done:
+        return float('nan')
+    else:
+        start = default_timer()
+        func()
+        time = default_timer() - start
+        return time
+
+def run(pmf1_expr, pmf2_expr, betas, lengths, repeat, date, out_dir,
+        nc_time_limit, psfft_time_limit):
+    pmf1_func = eval(pmf1_expr)
+    pmf2_func = eval(pmf2_expr)
+
+    np.random.seed(1)
+    fname = 'psfft-bench-{date}-pmf1-{pmf1}-pmf2-{pmf2}.csv'.format(
+        date = date,
+        pmf1 = pmf1_expr,
+        pmf2 = pmf2_expr)
+
+    nc_done = False
+    psfft_done = False
+    fftc_done = False
+
+    with open(path.join(out_dir,fname), 'w') as f:
+        write_header(f)
+
+        for n in lengths:
+            for i in range(repeat):
+                pmf1 = pmf1_func(n)
+                pmf1 -= sisfft.utils.log_sum(pmf1)
+                pmf2 = pmf2_func(n)
+                pmf2 -= sisfft.utils.log_sum(pmf2)
+
+                if i == 0:
+                    nc_time = timeit(nc_done, lambda: sisfft.naive.convolve_naive(pmf1, pmf2))
+                else:
+                    nc_time = float('nan')
+                fftc_time = timeit(fftc_done, lambda: sisfft.naive.convolve_fft(pmf1, pmf2))
+
+                for beta in betas:
+                    psfftc_time = timeit(psfft_done,
+                                         lambda: sisfft.psfft.convolve(pmf1, pmf2, 1.0 / beta))
+
+                    write_results(f, n, beta,
+                                  nc_time,
+                                  psfftc_time,
+                                  fftc_time)
+
+                    psfft_done |= psfftc_time > psfft_time_limit
+
+                nc_done |= nc_time > nc_time_limit
+                fftc_done |= fftc_time > psfft_time_limit
+
+                if nc_done and psfft_done and fft_done:
+                    break
+
+def run_random(pmf1_expr, pmf2_expr, lengths, repeat, date, out_dir):
+    np.random.seed(1)
+    fname = 'psfft-random-bench-{date}-pmf1-{pmf1}-pmf2-{pmf2}.csv'
+    with open(path.join(out_dir,fname), 'w') as f:
+        pass
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--nc-time-limit', metavar='SECS', type=float,
+                        default=DEFAULT_TIME_LIMIT,
+                        help = 'time limit on NC before stopping measuring it')
+    parser.add_argument('--psfft-time-limit', metavar='SECS', type=float,
+                        default=DEFAULT_TIME_LIMIT,
+                        help = 'time limit on psFFT before stopping measuring it')
+    parser.add_argument('-n', '--lengths', metavar='N', default=DEFAULT_LENGTH,
+                        help = 'expression generating the lengths to use')
+    parser.add_argument('-o', '--out-dir', metavar='DIR', default='.',
+                        help = 'directory to write files to')
+    parser.add_argument('-b', '--beta', metavar='ACCURACY', type=float, action='append',
+                        help = 'relative accuracies to compute the p-value to')
+    parser.add_argument('-r', '--random', metavar='N', type=int, default=1,
+                        help = 'the pmfs are randomly generated, and should have this many repeats')
+    parser.add_argument('--log', default='WARN',
+                        help = 'level to log at')
+    parser.add_argument('pmfs', metavar='PMF', nargs='+',
+                        help = 'python expressions for function that create vectors/PMFs to benchmark')
+    args = parser.parse_args()
+
+    lengths = list(eval(args.lengths))
+    pmfs = args.pmfs
+    nc_time_limit = args.nc_time_limit
+    psfft_time_limit = args.psfft_time_limit
+    betas = args.beta or [DEFAULT_BETA]
+    out_dir = args.out_dir
+    repeats = args.random
+
+    level = getattr(logging, args.log.upper(), None)
+    if not isinstance(level, int):
+        raise ValueError('--log argument was not a valid level')
+    logging.basicConfig(level = level)
+
+    date = datetime.now().strftime('%Y%m%d-%H%M%S')
+
+    for i, pmf1 in enumerate(pmfs):
+        for pmf2 in pmfs[i:]:
+            run(pmf1, pmf2, betas, lengths, repeats,
+                date, out_dir,
+                nc_time_limit, psfft_time_limit)
+
+if __name__ == '__main__':
+    main()
