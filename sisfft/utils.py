@@ -1,7 +1,7 @@
 import numpy as np
 
 NEG_INF = -float('inf')
-EPS = np.finfo(float).eps
+EPS = np.finfo(float).eps / 2
 
 def clamp(x, lo, hi):
     return min(max(x, lo), hi)
