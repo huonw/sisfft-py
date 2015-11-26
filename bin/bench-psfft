@@ -5,7 +5,7 @@ import sisfft
 import argparse
 import numpy
 np = numpy
-import math
+import math, sys
 import logging
 from os import path
 from datetime import datetime
@@ -52,15 +52,16 @@ def truly_uniform(n):
     return np.log(np.random.random(n))
 
 def write_header(f):
-    print('L,beta,NC_time,psFFT_time,FFTC_time,ratio', file = f)
+    print('L,beta,bound,NC_time,psFFT_time,FFTC_time,ratio', file = f)
     f.flush()
 
-def write_results(f, n, beta, nc_time, psfftc_time, fftc_time):
+def write_results(f, n, beta, bound, nc_time, psfftc_time, fftc_time):
     ratio = nc_time / psfftc_time
 
-    s = '{L:d},{beta},{nc},{psfftc},{fftc},{ratio}'.format(
+    s = '{L:d},{beta},{bound},{nc},{psfftc},{fftc},{ratio}'.format(
         L = n,
         beta = beta,
+        bound = bound,
         nc = nc_time,
         psfftc = psfftc_time,
         fftc = fftc_time,
@@ -78,7 +79,7 @@ def timeit(done, func):
         time = default_timer() - start
         return time
 
-def run(pmf1_expr, pmf2_expr, betas, lengths, repeat, date, out_dir,
+def run(pmf1_expr, pmf2_expr, betas, bounds, lengths, repeat, date, out_dir,
         nc_time_limit, psfft_time_limit):
     pmf1_func = eval(pmf1_expr)
     pmf2_func = eval(pmf2_expr)
@@ -103,27 +104,28 @@ def run(pmf1_expr, pmf2_expr, betas, lengths, repeat, date, out_dir,
                 pmf2 = pmf2_func(n)
                 pmf2 -= sisfft.utils.log_sum(pmf2)
 
-                if i == 0:
-                    nc_time = timeit(nc_done, lambda: sisfft.naive.convolve_naive(pmf1, pmf2))
-                else:
-                    nc_time = float('nan')
+                nc_time = timeit(i != 0 or nc_done, lambda: sisfft.naive.convolve_naive(pmf1, pmf2))
+                # seed the transform lengths
+                sisfft.naive.convolve_fft(pmf1, pmf2)
                 fftc_time = timeit(fftc_done, lambda: sisfft.naive.convolve_fft(pmf1, pmf2))
 
                 for beta in betas:
-                    psfftc_time = timeit(psfft_done,
-                                         lambda: sisfft.psfft.convolve(pmf1, pmf2, 1.0 / beta))
+                    for bound in bounds:
+                        psfftc_time = timeit(psfft_done,
+                                             lambda: sisfft.psfft.convolve(pmf1, pmf2, 1.0 / beta,
+                                                                           bound))
 
-                    write_results(f, n, beta,
-                                  nc_time,
-                                  psfftc_time,
-                                  fftc_time)
+                        write_results(f, n, beta, bound,
+                                      nc_time,
+                                      psfftc_time,
+                                      fftc_time)
 
-                    psfft_done |= psfftc_time > psfft_time_limit
+                        psfft_done |= psfftc_time > psfft_time_limit
 
                 nc_done |= nc_time > nc_time_limit
                 fftc_done |= fftc_time > psfft_time_limit
 
-                if nc_done and psfft_done and fft_done:
+                if nc_done and psfft_done and fftc_done:
                     break
 
 def run_random(pmf1_expr, pmf2_expr, lengths, repeat, date, out_dir):
@@ -146,6 +148,10 @@ def main():
                         help = 'directory to write files to')
     parser.add_argument('-b', '--beta', metavar='ACCURACY', type=float, action='append',
                         help = 'relative accuracies to compute the p-value to')
+    parser.add_argument('-B', '--bound', metavar='BOUND', type=float, action='append',
+                        help = 'lower-bound to use')
+    parser.add_argument('--disable-unbounded', action='store_true',
+                        help = 'don\'t do the convolution without a lower bound')
     parser.add_argument('-r', '--random', metavar='N', type=int, default=1,
                         help = 'the pmfs are randomly generated, and should have this many repeats')
     parser.add_argument('--log', default='WARN',
@@ -159,8 +165,16 @@ def main():
     nc_time_limit = args.nc_time_limit
     psfft_time_limit = args.psfft_time_limit
     betas = args.beta or [DEFAULT_BETA]
+    bounds = args.bound or []
     out_dir = args.out_dir
     repeats = args.random
+
+    if not args.disable_unbounded:
+        bounds.append(None)
+
+    if len(bounds) == 0:
+        print('no bounds specified', file=sys.stderr)
+        sys.exit(1)
 
     level = getattr(logging, args.log.upper(), None)
     if not isinstance(level, int):
@@ -171,7 +185,7 @@ def main():
 
     for i, pmf1 in enumerate(pmfs):
         for pmf2 in pmfs[i:]:
-            run(pmf1, pmf2, betas, lengths, repeats,
+            run(pmf1, pmf2, betas, bounds, lengths, repeats,
                 date, out_dir,
                 nc_time_limit, psfft_time_limit)
 
