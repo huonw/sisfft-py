@@ -396,8 +396,7 @@ def _filtered_mult_ifft(fft1, normaliser1, fft2, normaliser2,
 
 def _compute_theta(log_pmf1, log_pmf2, Lnorm = 2):
     def f(theta):
-        s1, _ = utils.shift(log_pmf1, theta)
-        s2, _ = utils.shift(log_pmf2, theta)
-        r = utils.log_dynamic_range(s1) * utils.log_dynamic_range(s2)
-        return r
+        r1 = utils.log_dynamic_range_shifted(log_pmf1, theta)
+        r2 = utils.log_dynamic_range_shifted(log_pmf2, theta)
+        return r1 * r2
     return optimize.fminbound(f, -OPT_BOUND, OPT_BOUND)

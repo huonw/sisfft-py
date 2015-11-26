@@ -20,6 +20,15 @@ def shift(log_pmf, theta):
     shifted -= log_mgf
     return shifted, log_mgf
 
+def log_dynamic_range_shifted(log_pmf, theta):
+    # this is equivalent to log_dynamic_range(shift(log_pmf,
+    # theta)[0]), but is more efficient, as it avoids an unnecessary
+    # log_sum computation.
+    shifted = log_pmf + np.arange(float(len(log_pmf))) * theta
+    lo = log_min_pos(shifted)
+    hi = log_sum(shifted * 2.0) / 2
+    return hi - lo
+
 def unshift(convolved, theta, *mgfs):
     c = convolved - theta * np.arange(len(convolved))
     for (mgf, multiplicity) in mgfs:
@@ -44,7 +53,8 @@ def log_sum(log_u):
     if max == NEG_INF:
         return max
     else:
-        exp = np.exp(log_u - max)
+        exp = log_u - max
+        np.exp(exp, out = exp)
         return np.log1p(np.sum(exp[:maxi]) + np.sum(exp[maxi + 1:])) + max
 
 
