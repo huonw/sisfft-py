@@ -26,14 +26,7 @@ def convolve(log_pmf1, log_pmf2, alpha, delta = None):
                               pairwise = True,
                               square_1 = False)[0]
     else:
-        # shift, convolve, unshift
-        theta = _compute_theta(log_pmf1, log_pmf2)
-        s1, log_mgf1 = utils.shift(log_pmf1, theta)
-        s2, log_mgf2 = utils.shift(log_pmf2, theta)
-        convolved = _psfft_noshift(s1, s2, alpha, NEG_INF,
-                                   pairwise = True,
-                                   square_1 = False)[0]
-        return utils.unshift(convolved, theta, (log_mgf1, 1), (log_mgf2, 1))
+        return _convolve_no_lower_bound(log_pmf1, log_pmf2, alpha)
 
 def convolve_square(log_pmf, alpha, delta = None):
     if delta is None:
@@ -55,6 +48,34 @@ def convolve_and_square(log_pmf1, log_pmf2, alpha, delta = None):
     else:
         return _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
                               pairwise = True, square_1 = True)
+
+def _convolve_no_lower_bound(log_pmf1, log_pmf2, alpha):
+    true_conv_len, fft_conv_len = utils.pairwise_convolution_lengths(len(log_pmf1),
+                                                                     len(log_pmf2))
+
+    pmf1 = np.exp(log_pmf1)
+    fft1 = fft.fft(pmf1, n = fft_conv_len)
+    direct, bad_places = _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2,
+                                          true_conv_len, fft_conv_len,
+                                          alpha, NEG_INF)
+
+    used_nc = _use_nc_if_better(log_pmf1, ESTIMATE_ONE_SPLIT,
+                                log_pmf2, ESTIMATE_TWO_SPLITS,
+                                direct, bad_places,
+                                COST_RATIO)
+    if used_nc:
+        logging.debug('convolved without lower bound without shifting')
+        return direct
+
+    # shift, convolve, unshift
+    theta = _compute_theta(log_pmf1, log_pmf2)
+    s1, log_mgf1 = utils.shift(log_pmf1, theta)
+    s2, log_mgf2 = utils.shift(log_pmf2, theta)
+    convolved = _psfft_noshift(s1, s2, alpha, NEG_INF,
+                               pairwise = True,
+                               square_1 = False)[0]
+    return utils.unshift(convolved, theta, (log_mgf1, 1), (log_mgf2, 1))
+
 
 def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
                    pairwise, square_1):
