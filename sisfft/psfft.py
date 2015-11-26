@@ -106,26 +106,20 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
     answer = answer_sq = None
 
     if pairwise:
-        nc_is_better = _is_nc_faster(len(log_pmf1), ESTIMATE_ONE_SPLIT,
-                                     len(log_pmf2), ESTIMATE_TWO_SPLITS,
-                                     len(bad_places),
-                                     COST_RATIO)
-        if nc_is_better:
-            with timer('naive'):
-                answer = direct
-                naive.convolve_naive_into(answer, bad_places,
-                                          log_pmf1, log_pmf2)
-    if square_1:
-        nc_is_better = _is_nc_faster(len(log_pmf1), ESTIMATE_TWO_SPLITS,
-                                     len(log_pmf1), ESTIMATE_TWO_SPLITS,
-                                     len(bad_places_sq),
-                                     COST_RATIO_SQUARE)
-        if nc_is_better:
-            with timer('naive'):
-                answer_sq = direct_sq
-                naive.convolve_naive_into(answer_sq, bad_places_sq,
-                                          log_pmf1, log_pmf1)
+        used_nc = _use_nc_if_better(log_pmf1, ESTIMATE_ONE_SPLIT,
+                                    log_pmf2, ESTIMATE_TWO_SPLITS,
+                                    direct, bad_places,
+                                    COST_RATIO)
+        if used_nc:
+            answer = direct
 
+    if square_1:
+        used_nc = _use_nc_if_better(log_pmf1, ESTIMATE_TWO_SPLITS,
+                                    log_pmf1, ESTIMATE_TWO_SPLITS,
+                                    direct_sq, bad_places_sq,
+                                    COST_RATIO_SQUARE)
+        if used_nc:
+            answer_sq = direct_sq
 
     need_to_pairwise = answer is None and pairwise
     need_to_square = answer_sq is None and square_1
@@ -161,25 +155,19 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
                                                                   COST_RATIO_SQUARE))
 
     if need_to_pairwise:
-        nc_is_better = _is_nc_faster(len(log_pmf1), splits1,
-                                     len(log_pmf2), splits2,
-                                     len(bad_places),
-                                     COST_RATIO)
-        if nc_is_better:
-            with timer('naive'):
-                answer = direct
-                naive.convolve_naive_into(answer, bad_places,
-                                          log_pmf1, log_pmf2)
+        used_nc = _use_nc_if_better(log_pmf1, splits1,
+                                    log_pmf2, splits2,
+                                    direct, bad_places,
+                                    COST_RATIO)
+        if used_nc:
+            answer = direct
     if need_to_square:
-        nc_is_better_sq = _is_nc_faster(len(log_pmf1), splits1_sq,
-                                        len(log_pmf1), splits1_sq,
-                                        len(bad_places_sq),
-                                        COST_RATIO_SQUARE)
-        if nc_is_better_sq:
-            with timer('naive'):
-                answer_sq = direct_sq
-                naive.convolve_naive_into(answer_sq, bad_places_sq,
-                                          log_pmf1, log_pmf1)
+        used_nc = _use_nc_if_better(log_pmf1, splits1_sq,
+                                    log_pmf1, splits1_sq,
+                                    direct_sq, bad_places_sq,
+                                    COST_RATIO_SQUARE)
+        if used_nc:
+            answer_sq = direct
 
     need_to_pairwise &= answer is None
     need_to_square &= answer_sq is None
@@ -374,6 +362,22 @@ def _is_nc_faster(len1, splits1,
                       nc_cost,
                       not nc_is_better)
     return nc_is_better
+
+def _use_nc_if_better(log_pmf1, splits1,
+                      log_pmf2, splits2,
+                      direct, bad_places,
+                      cost_ratio):
+    nc_is_better = _is_nc_faster(len(log_pmf1), splits1,
+                                 len(log_pmf2), splits2,
+                                 len(bad_places),
+                                 cost_ratio)
+    if nc_is_better:
+        with timer('naive'):
+            naive.convolve_naive_into(direct, bad_places,
+                                      log_pmf1, log_pmf2)
+        return True
+    else:
+        return False
 
 
 def _filtered_mult_ifft(fft1, normaliser1, fft2, normaliser2,
