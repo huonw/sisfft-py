@@ -52,16 +52,17 @@ def truly_uniform(n):
     return np.log(np.random.random(n))
 
 def write_header(f):
-    print('L,beta,bound,NC_time,psFFT_time,FFTC_time,ratio', file = f)
+    print('L,beta,bound,fast_path,NC_time,psFFT_time,FFTC_time,ratio', file = f)
     f.flush()
 
-def write_results(f, n, beta, bound, nc_time, psfftc_time, fftc_time):
+def write_results(f, n, beta, bound, fast_path, nc_time, psfftc_time, fftc_time):
     ratio = nc_time / psfftc_time
 
-    s = '{L:d},{beta},{bound},{nc},{psfftc},{fftc},{ratio}'.format(
+    s = '{L:d},{beta},{bound},{fast_path},{nc},{psfftc},{fftc},{ratio}'.format(
         L = n,
         beta = beta,
         bound = bound,
+        fast_path = 1 if fast_path else 0,
         nc = nc_time,
         psfftc = psfftc_time,
         fftc = fftc_time,
@@ -79,7 +80,8 @@ def timeit(done, func):
         time = default_timer() - start
         return time
 
-def run(pmf1_expr, pmf2_expr, betas, bounds, lengths, repeat, date, out_dir,
+def run(pmf1_expr, pmf2_expr, betas, bounds, paths,
+        lengths, repeat, date, out_dir,
         nc_time_limit, psfft_time_limit):
     pmf1_func = eval(pmf1_expr)
     pmf2_func = eval(pmf2_expr)
@@ -111,16 +113,19 @@ def run(pmf1_expr, pmf2_expr, betas, bounds, lengths, repeat, date, out_dir,
 
                 for beta in betas:
                     for bound in bounds:
-                        psfftc_time = timeit(psfft_done,
-                                             lambda: sisfft.psfft.convolve(pmf1, pmf2, 1.0 / beta,
-                                                                           bound))
+                        for enable_fast_path in paths:
+                            psfftc_time = timeit(
+                                psfft_done,
+                                lambda: sisfft.psfft.convolve(pmf1, pmf2, 1.0 / beta,
+                                                              bound,
+                                                              enable_fast_path = enable_fast_path))
 
-                        write_results(f, n, beta, bound,
-                                      nc_time,
-                                      psfftc_time,
-                                      fftc_time)
+                            write_results(f, n, beta, bound, enable_fast_path,
+                                          nc_time,
+                                          psfftc_time,
+                                          fftc_time)
 
-                        psfft_done |= psfftc_time > psfft_time_limit
+                            psfft_done |= psfftc_time > psfft_time_limit
 
                 nc_done |= nc_time > nc_time_limit
                 fftc_done |= fftc_time > psfft_time_limit
@@ -152,6 +157,10 @@ def main():
                         help = 'lower-bound to use')
     parser.add_argument('--disable-unbounded', action='store_true',
                         help = 'don\'t do the convolution without a lower bound')
+    parser.add_argument('--disabled-fast-path', action='store_true',
+                        help = 'do the convolution with the fast path disabled')
+    parser.add_argument('--no-enabled-fast-path', action='store_true',
+                        help = 'don\'t do the convolution with the fast path enabled')
     parser.add_argument('-r', '--random', metavar='N', type=int, default=1,
                         help = 'the pmfs are randomly generated, and should have this many repeats')
     parser.add_argument('--log', default='WARN',
@@ -172,9 +181,18 @@ def main():
     if not args.disable_unbounded:
         bounds.append(None)
 
+    paths = []
+    if args.disabled_fast_path:
+        paths.append(False)
+    if not args.no_enabled_fast_path:
+        paths.append(True)
+
     if len(bounds) == 0:
         print('no bounds specified', file=sys.stderr)
         sys.exit(1)
+    if len(paths) == 0:
+        print('no paths enabled', file = sys.stderr)
+        sys.exit(2)
 
     level = getattr(logging, args.log.upper(), None)
     if not isinstance(level, int):
@@ -185,7 +203,8 @@ def main():
 
     for i, pmf1 in enumerate(pmfs):
         for pmf2 in pmfs[i:]:
-            run(pmf1, pmf2, betas, bounds, lengths, repeats,
+            run(pmf1, pmf2, betas, bounds, paths,
+                lengths, repeats,
                 date, out_dir,
                 nc_time_limit, psfft_time_limit)
 

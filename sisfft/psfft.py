@@ -19,14 +19,17 @@ OPT_BOUND = 1e4
 ESTIMATE_ONE_SPLIT = 1
 ESTIMATE_TWO_SPLITS = 2
 
-def convolve(log_pmf1, log_pmf2, alpha, delta = None):
+def convolve(log_pmf1, log_pmf2, alpha, delta = None,
+             enable_fast_path = True):
     # assert len(log_pmf1) == len(log_pmf2)
     if delta is not None:
         return _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
                               pairwise = True,
-                              square_1 = False)[0]
+                              square_1 = False,
+                              enable_fast_path = enable_fast_path)[0]
     else:
-        return _convolve_no_lower_bound(log_pmf1, log_pmf2, alpha)
+        return _convolve_no_lower_bound(log_pmf1, log_pmf2, alpha,
+                                        enable_fast_path = enable_fast_path)
 
 def convolve_square(log_pmf, alpha, delta = None):
     if delta is None:
@@ -34,7 +37,8 @@ def convolve_square(log_pmf, alpha, delta = None):
     else:
         return _psfft_noshift(log_pmf, np.array([]), alpha, delta,
                               pairwise = False,
-                              square_1 = True)[1]
+                              square_1 = True,
+                              enable_fast_path = True)[1]
 
 # computes `log_pmf1 * log_pmf2, log_pmf1 * log_pmf1`
 def convolve_and_square(log_pmf1, log_pmf2, alpha, delta = None):
@@ -47,25 +51,28 @@ def convolve_and_square(log_pmf1, log_pmf2, alpha, delta = None):
         return co, sq
     else:
         return _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
-                              pairwise = True, square_1 = True)
+                              pairwise = True, square_1 = True,
+                              enable_fast_path = True)
 
-def _convolve_no_lower_bound(log_pmf1, log_pmf2, alpha):
-    true_conv_len, fft_conv_len = utils.pairwise_convolution_lengths(len(log_pmf1),
-                                                                     len(log_pmf2))
+def _convolve_no_lower_bound(log_pmf1, log_pmf2, alpha,
+                             enable_fast_path):
+    if enable_fast_path:
+        true_conv_len, fft_conv_len = utils.pairwise_convolution_lengths(len(log_pmf1),
+                                                                         len(log_pmf2))
 
-    pmf1 = np.exp(log_pmf1)
-    fft1 = fft.fft(pmf1, n = fft_conv_len)
-    direct, bad_places = _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2,
-                                          true_conv_len, fft_conv_len,
-                                          alpha, NEG_INF)
+        pmf1 = np.exp(log_pmf1)
+        fft1 = fft.fft(pmf1, n = fft_conv_len)
+        direct, bad_places = _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2,
+                                              true_conv_len, fft_conv_len,
+                                              alpha, NEG_INF)
 
-    used_nc = _use_nc_if_better(log_pmf1, ESTIMATE_ONE_SPLIT,
-                                log_pmf2, ESTIMATE_TWO_SPLITS,
-                                direct, bad_places,
-                                COST_RATIO)
-    if used_nc:
-        logging.debug('convolved without lower bound without shifting')
-        return direct
+        used_nc = _use_nc_if_better(log_pmf1, ESTIMATE_ONE_SPLIT,
+                                    log_pmf2, ESTIMATE_TWO_SPLITS,
+                                    direct, bad_places,
+                                    COST_RATIO)
+        if used_nc:
+            logging.debug('convolved without lower bound without shifting')
+            return direct
 
     # shift, convolve, unshift
     theta = _compute_theta(log_pmf1, log_pmf2)
@@ -73,12 +80,14 @@ def _convolve_no_lower_bound(log_pmf1, log_pmf2, alpha):
     s2, log_mgf2 = utils.shift(log_pmf2, theta)
     convolved = _psfft_noshift(s1, s2, alpha, NEG_INF,
                                pairwise = True,
-                               square_1 = False)[0]
+                               square_1 = False,
+                               enable_fast_path = enable_fast_path)[0]
     return utils.unshift(convolved, theta, (log_mgf1, 1), (log_mgf2, 1))
 
 
 def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
-                   pairwise, square_1):
+                   pairwise, square_1,
+                   enable_fast_path):
     """This function does some sort of pairwise convolution with its arguments, it has three modes:
     - pairwise = True: log_pmf1 * log_pmf2
     - square_1 = True: log_pmf1 * log_pmf1
@@ -106,41 +115,42 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
     len1 = len(log_pmf1)
     len2 = len(log_pmf2)
 
-    with timer('initial fft'):
-        pmf1 = np.exp(log_pmf1)
-        fft1 = fft.fft(pmf1, n = fft_conv_len)
-        if pairwise:
-            direct, bad_places = _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2,
-                                                  true_conv_len, fft_conv_len,
-                                                  alpha, delta)
-
-        if square_1:
-            if can_reuse_pairwise:
-                direct_sq, bad_places_sq = _direct_fft_conv(log_pmf1, pmf1, fft1, None,
-                                                            true_conv_len_sq, fft_conv_len_sq,
-                                                            alpha, delta)
-            else:
-                fft1_sq = fft.fft(pmf1, n = fft_conv_len_sq)
-                direct_sq, bad_places_sq = _direct_fft_conv(log_pmf1, pmf1, fft1_sq, None,
-                                                            true_conv_len_sq, fft_conv_len_sq,
-                                                            alpha, delta)
     answer = answer_sq = None
 
-    if pairwise:
-        used_nc = _use_nc_if_better(log_pmf1, ESTIMATE_ONE_SPLIT,
-                                    log_pmf2, ESTIMATE_TWO_SPLITS,
-                                    direct, bad_places,
-                                    COST_RATIO)
-        if used_nc:
-            answer = direct
+    if enable_fast_path:
+        with timer('initial fft'):
+            pmf1 = np.exp(log_pmf1)
+            fft1 = fft.fft(pmf1, n = fft_conv_len)
+            if pairwise:
+                direct, bad_places = _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2,
+                                                      true_conv_len, fft_conv_len,
+                                                      alpha, delta)
 
-    if square_1:
-        used_nc = _use_nc_if_better(log_pmf1, ESTIMATE_TWO_SPLITS,
-                                    log_pmf1, ESTIMATE_TWO_SPLITS,
-                                    direct_sq, bad_places_sq,
-                                    COST_RATIO_SQUARE)
-        if used_nc:
-            answer_sq = direct_sq
+            if square_1:
+                if can_reuse_pairwise:
+                    direct_sq, bad_places_sq = _direct_fft_conv(log_pmf1, pmf1, fft1, None,
+                                                                true_conv_len_sq, fft_conv_len_sq,
+                                                                alpha, delta)
+                else:
+                    fft1_sq = fft.fft(pmf1, n = fft_conv_len_sq)
+                    direct_sq, bad_places_sq = _direct_fft_conv(log_pmf1, pmf1, fft1_sq, None,
+                                                                true_conv_len_sq, fft_conv_len_sq,
+                                                                alpha, delta)
+        if pairwise:
+            used_nc = _use_nc_if_better(log_pmf1, ESTIMATE_ONE_SPLIT,
+                                        log_pmf2, ESTIMATE_TWO_SPLITS,
+                                        direct, bad_places,
+                                        COST_RATIO)
+            if used_nc:
+                answer = direct
+
+        if square_1:
+            used_nc = _use_nc_if_better(log_pmf1, ESTIMATE_TWO_SPLITS,
+                                        log_pmf1, ESTIMATE_TWO_SPLITS,
+                                        direct_sq, bad_places_sq,
+                                        COST_RATIO_SQUARE)
+            if used_nc:
+                answer_sq = direct_sq
 
     need_to_pairwise = answer is None and pairwise
     need_to_square = answer_sq is None and square_1
@@ -149,18 +159,28 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
 
     with timer('splitting'):
         if need_to_pairwise:
+            if enable_fast_path:
+                limit = _split_limit(len1, len2, None,
+                                     len(bad_places),
+                                     COST_RATIO)
+            else:
+                limit = -NEG_INF
+
             splits1, normalisers1 = _split(log_pmf1, fft_conv_len,
                                            alpha, delta,
-                                           _split_limit(len1, len2, None,
-                                                        len(bad_places),
-                                                        COST_RATIO))
+                                           limit)
             if splits1 is not None:
+                if enable_fast_path:
+                    limit = _split_limit(len1, len2,
+                                         len(splits1),
+                                         len(bad_places),
+                                         COST_RATIO)
+                else:
+                    limit = -NEG_INF
+
                 splits2, normalisers2 = _split(log_pmf2, fft_conv_len,
                                                alpha, delta,
-                                               _split_limit(len1, len2,
-                                                            len(splits1),
-                                                            len(bad_places),
-                                                            COST_RATIO))
+                                               limit)
             else:
                 splits2, normalisers2 = None, None
 
@@ -169,20 +189,24 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
                 splits1_sq, normalisers1_sq = splits1, normalisers1
             else:
                 # different numbers so we need to re-split
+                if enable_fast_path:
+                    limit = _split_limit(len1, None, None,
+                                         len(bad_places_sq),
+                                         COST_RATIO_SQUARE)
+                else:
+                    limit = -NEG_INF
                 splits1_sq, normalisers1_sq = _split(log_pmf1, fft_conv_len_sq,
                                                      alpha, delta,
-                                                     _split_limit(len1, None, None,
-                                                                  len(bad_places_sq),
-                                                                  COST_RATIO_SQUARE))
+                                                     limit)
 
-    if need_to_pairwise:
+    if need_to_pairwise and enable_fast_path:
         used_nc = _use_nc_if_better(log_pmf1, splits1,
                                     log_pmf2, splits2,
                                     direct, bad_places,
                                     COST_RATIO)
         if used_nc:
             answer = direct
-    if need_to_square:
+    if need_to_square and enable_fast_path:
         used_nc = _use_nc_if_better(log_pmf1, splits1_sq,
                                     log_pmf1, splits1_sq,
                                     direct_sq, bad_places_sq,
