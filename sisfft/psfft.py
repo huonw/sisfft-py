@@ -91,18 +91,18 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
         if pairwise:
             direct, bad_places = _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2,
                                                   true_conv_len, fft_conv_len,
-                                                  alpha)
+                                                  alpha, delta)
 
         if square_1:
             if can_reuse_pairwise:
                 direct_sq, bad_places_sq = _direct_fft_conv(log_pmf1, pmf1, fft1, None,
                                                             true_conv_len_sq, fft_conv_len_sq,
-                                                            alpha)
+                                                            alpha, delta)
             else:
                 fft1_sq = fft.fft(pmf1, n = fft_conv_len_sq)
                 direct_sq, bad_places_sq = _direct_fft_conv(log_pmf1, pmf1, fft1_sq, None,
                                                             true_conv_len_sq, fft_conv_len_sq,
-                                                            alpha)
+                                                            alpha, delta)
     answer = answer_sq = None
 
     if pairwise:
@@ -229,7 +229,8 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
     if square_1: assert len(answer_sq) == true_conv_len_sq
     return answer, answer_sq
 
-def _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2, true_conv_len, fft_conv_len, alpha):
+def _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2, true_conv_len, fft_conv_len,
+                     alpha, delta):
     if log_pmf2 is None:
         norms = np.linalg.norm(pmf1)**2
         fft_conv = fft1**2
@@ -240,10 +241,16 @@ def _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2, true_conv_len, fft_conv_len
         fft_conv = fft1 * fft2
 
     raw_conv = np.abs(fft.ifft(fft_conv)[:true_conv_len])
-    threshold = utils.error_threshold_factor(fft_conv_len) * (alpha + 1) * norms
+    error_level = utils.error_threshold_factor(fft_conv_len) * norms
+    ignore_level = delta - error_level
+    threshold = error_level * (alpha + 1)
+
+    conv_to_ignore = raw_conv < ignore_level
+    raw_conv[conv_to_ignore] = 0.0
 
     conv_below_threshold = raw_conv <= threshold
-    bad_places = np.where(conv_below_threshold)[0]
+    places_of_interest = conv_below_threshold & np.logical_not(conv_to_ignore)
+    bad_places = np.where(places_of_interest)[0]
 
     log_conv = np.log(raw_conv)
 
@@ -268,7 +275,7 @@ def _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2, true_conv_len, fft_conv_len
     threshold = utils.error_threshold_factor(fft_conv_len) * 2 * Q
     zeros = raw_support <= threshold
     log_conv[zeros] = NEG_INF
-    bad_places = np.where(np.logical_not(zeros) & conv_below_threshold)[0]
+    bad_places = np.where(np.logical_not(zeros) & places_of_interest)[0]
     return log_conv, bad_places
 
 def _split(log_pmf, fft_conv_len, alpha, delta,
