@@ -61,7 +61,7 @@ def write_results(f, n, beta, bound, fast_path, nc_time, psfftc_time, fftc_time)
     s = '{L:d},{beta},{bound},{fast_path},{nc},{psfftc},{fftc},{ratio}'.format(
         L = n,
         beta = beta,
-        bound = bound,
+        bound = 'NaN' if bound is None else bound,
         fast_path = 1 if fast_path else 0,
         nc = nc_time,
         psfftc = psfftc_time,
