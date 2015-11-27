@@ -287,40 +287,45 @@ def _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2, true_conv_len, fft_conv_len
 
     raw_conv = np.abs(fft.ifft(fft_conv)[:true_conv_len])
     error_level = utils.error_threshold_factor(fft_conv_len) * norms
-    ignore_level = delta - error_level
     threshold = error_level * (alpha + 1)
+    places_of_interest = raw_conv <= threshold
 
-    conv_to_ignore = raw_conv < ignore_level
-    raw_conv[conv_to_ignore] = 0.0
+    if delta > error_level:
+        ignore_level = delta - error_level
 
-    conv_below_threshold = raw_conv <= threshold
-    places_of_interest = conv_below_threshold & np.logical_not(conv_to_ignore)
-    bad_places = np.where(places_of_interest)[0]
+        conv_to_ignore = raw_conv < ignore_level
+        raw_conv[conv_to_ignore] = 0.0
+        places_of_interest &= ~conv_to_ignore
 
     log_conv = np.log(raw_conv)
 
     # the convolution is totally right, already: no need to consult
     # the support
-    if len(bad_places) == 0:
-        return log_conv, bad_places
+    if not places_of_interest.any():
+        return log_conv, []
 
-    # quickly compute the support; this is accurate for vectors up to
-    # length approximately 1e14
-    support1 = log_pmf1 > NEG_INF
-    fft_support1 = fft.fft(support1, n = fft_conv_len)
-    if log_pmf2 is None:
-        fft_support = fft_support1**2
+    Q = 2 * len(log_pmf1) - 1 if log_pmf2 is None else len(log_pmf1) + len(log_pmf2) - 1
+
+    if Q <= 2**42:
+        # quickly compute the support; this is accurate given the bound
+        support1 = log_pmf1 > NEG_INF
+        fft_support1 = fft.fft(support1, n = fft_conv_len)
+        if log_pmf2 is None:
+            fft_support = fft_support1**2
+        else:
+            support2 = log_pmf2 > NEG_INF
+            fft_support2 = fft.fft(support2, n = fft_conv_len)
+            fft_support = fft_support1 * fft_support2
+
+        raw_support = np.abs(fft.ifft(fft_support)[:true_conv_len])
+        threshold = utils.error_threshold_factor(fft_conv_len) * 2 * Q
+        zeros = raw_support <= threshold
+        log_conv[zeros] = NEG_INF
+        bad_places = np.where(~zeros & places_of_interest)[0]
     else:
-        support2 = log_pmf2 > NEG_INF
-        fft_support2 = fft.fft(support2, n = fft_conv_len)
-        fft_support = fft_support1 * fft_support2
+        # can't compute the support accurately.
+        bad_places = np.where(places_of_interest)[0]
 
-    raw_support = np.abs(fft.ifft(fft_support)[:true_conv_len])
-    Q = len(log_pmf1) if log_pmf2 is None else max(len(log_pmf1), len(log_pmf2))
-    threshold = utils.error_threshold_factor(fft_conv_len) * 2 * Q
-    zeros = raw_support <= threshold
-    log_conv[zeros] = NEG_INF
-    bad_places = np.where(np.logical_not(zeros) & places_of_interest)[0]
     return log_conv, bad_places
 
 def _split(log_pmf, fft_conv_len, alpha, delta,
