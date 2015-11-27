@@ -71,7 +71,7 @@ def _convolve_no_lower_bound(log_pmf1, log_pmf2, alpha,
                                     direct, bad_places,
                                     COST_RATIO)
         if used_nc:
-            logging.debug('convolved without lower bound without shifting')
+            #logging.debug('convolved without lower bound without shifting')
             return direct
 
     # shift, convolve, unshift
@@ -395,14 +395,16 @@ def _is_nc_faster(len1, splits1,
                   len2, splits2,
                   len_bad_places,
                   cost_ratio):
-    Q = max(len1, len2)
-    nc_cost = min(Q * len_bad_places, len1 * len2)
-
-    if splits1 is None or splits2 is None:
+    if len_bad_places == 0:
+        nc_is_better = True
+    elif splits1 is None or splits2 is None:
         nc_is_better = True
         logging.debug('psFFT didn\'t compute all splits (%s, %s). Using psFFT? False',
                       splits1, splits2)
     else:
+        Q = max(len1, len2)
+        nc_cost = min(Q * len_bad_places, len1 * len2)
+
         len1, msg = _splits_to_len(splits1)
         len2, _ = _splits_to_len(splits2)
         psfft_cost = len1 * len2 * Q * np.log2(Q)
@@ -429,9 +431,8 @@ def _use_nc_if_better(log_pmf1, splits1,
                                  len(bad_places),
                                  cost_ratio)
     if nc_is_better:
-        with timer('naive'):
-            naive.convolve_naive_into(direct, bad_places,
-                                      log_pmf1, log_pmf2)
+        naive.convolve_naive_into(direct, bad_places,
+                                  log_pmf1, log_pmf2)
         return True
     else:
         return False
