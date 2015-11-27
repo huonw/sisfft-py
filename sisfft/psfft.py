@@ -9,7 +9,7 @@ import logging
 import naive, utils
 from utils import NEG_INF, EPS
 
-COST_RATIO = 1.5
+COST_RATIO = 0.5
 # when we square we do approximately half the work of a general
 # convolution.
 COST_RATIO_SQUARE = COST_RATIO * 0.5
