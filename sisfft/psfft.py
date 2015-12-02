@@ -306,9 +306,15 @@ def _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2, true_conv_len, fft_conv_len
 
     Q = 2 * len(log_pmf1) - 1 if log_pmf2 is None else len(log_pmf1) + len(log_pmf2) - 1
 
-    if Q <= 2**42:
-        # quickly compute the support; this is accurate given the bound
-        support1 = log_pmf1 > NEG_INF
+    support1 = log_pmf1 > NEG_INF
+    if log_pmf2 is None:
+        support2 = np.array([])
+    else:
+        support2 = log_pmf2 > NEG_INF
+    if Q <= 2**42 and (not support1.all() or not support2.all()):
+        # quickly compute the support; this is accurate given the
+        # bound (if the vectors have no zeros, then the convolution
+        # has no zeros, so we can skip this)
         fft_support1 = fft.fft(support1, n = fft_conv_len)
         if log_pmf2 is None:
             fft_support = fft_support1**2
@@ -323,7 +329,7 @@ def _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2, true_conv_len, fft_conv_len
         log_conv[zeros] = NEG_INF
         bad_places = np.where(~zeros & places_of_interest)[0]
     else:
-        # can't compute the support accurately.
+        # can't/don't need to compute the support accurately.
         bad_places = np.where(places_of_interest)[0]
 
     return log_conv, bad_places
@@ -431,8 +437,9 @@ def _use_nc_if_better(log_pmf1, splits1,
                                  len(bad_places),
                                  cost_ratio)
     if nc_is_better:
-        naive.convolve_naive_into(direct, bad_places,
-                                  log_pmf1, log_pmf2)
+        if len(bad_places) > 0:
+            naive.convolve_naive_into(direct, bad_places,
+                                      log_pmf1, log_pmf2)
         return True
     else:
         return False
