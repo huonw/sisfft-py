@@ -1,0 +1,232 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import sisfft
+from sisfft.utils import log_sum
+import numpy
+np = numpy
+import argparse
+import logging
+import hashlib
+import pandas
+import mpmath as mp
+mp.mp.prec = 10000
+from os import path
+
+LENGTH_COL = 'plot-internal-length-column'
+RATIO_COL = 'plot-internal-ratio-column'
+CRB = '/users/pmother/huonw/vac-schol/cleanroom/benches/'
+RI = '/users/pmother/huonw/vac-schol/report/images/'
+
+class File(object):
+    def __init__(self, name, length_col, transform_column = lambda x: x):
+        self.data = pandas.read_csv(name)
+
+        self.data[LENGTH_COL] = transform_column(self.data[length_col])
+class Series(object):
+    def __init__(self, file, column, label, filters = {}, style={}, aggregate = None, show=True):
+        self.file = file
+        self.column = column
+        self.label = label
+        self.filters = filters
+        self.style = style
+        self.aggregate = aggregate
+        self.show = show
+
+def save(name):
+    print('saving %s' % name)
+    plt.savefig(RI + name + '.pdf', bbox_inches = 'tight')
+    plt.close()
+
+
+def element_plot():
+    s = np.arange(128.0)
+    log_pmf = s * (10 - s) / 60
+    log_pmf -= log_sum(log_pmf)
+    nc = sisfft.naive.convolve_naive(log_pmf, log_pmf)
+    afftc = sisfft.psfft.convolve(log_pmf, log_pmf, 1e3)
+    fftc = sisfft.naive.convolve_fft(log_pmf, log_pmf)
+
+    N = mp.mpf('0.2143445732831971899099569468624653124133444605716066678388089538586101565444442220530088439083536282')
+    N_nc = np.exp(log_sum(2 * nc) / 2)
+    N_fftc = np.exp(log_sum(2 * fftc) / 2)
+    N_afftc = np.exp(log_sum(2 * afftc) / 2)
+    print('%.60f\n%e\n%.60f\n%e\n%.60f\n%e' % (N_nc, (N_nc - N) / N,
+                                               N_fftc, (N_fftc - N) / N,
+                                               N_afftc, (N_afftc - N) / N))
+
+    xs = np.arange(len(nc))
+    fftc_diffs = np.abs(np.expm1(fftc - nc))
+    afftc_diffs = np.abs(np.expm1(afftc - nc))
+
+    plt.yscale('log', nonposy = 'mask')
+    plt.scatter(xs, afftc_diffs, s=3, marker='o', color='k',
+                label = 'aFFT-C')
+    plt.scatter(xs, fftc_diffs, s=9, marker='x', color='r',
+                label = 'FFT-C')
+
+    _,_,y1,y2 = plt.axis()
+    plt.xlim((0, xs.max()))
+    plt.ylim((y1, 1.0/y1))
+    plt.ylabel(r'relative accuracy')
+    plt.xlabel(r'$s$')
+    plt.legend(loc='upper right')
+    save('afftc-v-fftc')
+
+
+
+def timing_plot(name, files, series, relatives):
+    datas = []
+    for i, s in enumerate(series):
+        file = files[s.file]
+        if s.filters:
+            keys, values = zip(*s.filters.items())
+            grouped = file.data.replace({k: np.nan for k in keys}, np.inf).groupby(keys)
+            data = grouped.get_group(values)
+        else:
+            data = file.data
+
+        filter = (2**3 <= data[LENGTH_COL]) & (data[LENGTH_COL] <= 2**23)
+        data = data[filter]
+        if s.aggregate is not None:
+            data = s.aggregate(data.groupby(LENGTH_COL, as_index=False))
+        if s.show:
+            plt.loglog(data[LENGTH_COL],
+                       data[s.column],
+                       basex = 2,
+                       **s.style)[0].set_label(s.label)
+        datas.append(data[[LENGTH_COL, s.column]])
+
+    plt.legend(loc = 'upper left')
+    plt.ylabel('time (s)')
+    plt.xlabel('$L$')
+    plt.gca().yaxis.grid(True)
+    x_lo,x_hi, _, _ = plt.axis()
+    save(name)
+
+    just_one = len(relatives) == 1
+    for numer, denom, extra, style in relatives:
+        s_numer = series[numer]
+        s_denom = series[denom]
+        a = datas[numer]
+        b = datas[denom]
+        merged = pandas.merge(a, b)
+        merged[RATIO_COL] = merged[s_numer.column]/merged[s_denom.column]
+
+        label = '%s/%s' % (s_numer.label, s_denom.label)
+        if extra is not None:
+            print(extra)
+            label = '%s (%s)' % (label, extra)
+        print(merged)
+        plt.loglog(merged[LENGTH_COL],
+                   merged[RATIO_COL],
+                   basex = 2,
+                   **style)[0].set_label(label)
+        if just_one:
+            plt.ylabel(label)
+    plt.xlabel('$L$')
+    if not just_one:
+        plt.ylabel('ratio')
+        plt.legend(loc = 'upper right')
+    plt.gca().yaxis.grid(True)
+    plt.xlim(x_lo, x_hi)
+    save(name + '-relative')
+
+MAX = 0
+MEDIAN = 1
+MIN = 2
+
+def select_with_ratio(grouped, col1, col2, style):
+    processed = []
+    for g in grouped.groups:
+        group = grouped.get_group(g)
+        ratio = group[col1] / group[col2]
+        if style == MAX:
+            i = ratio.argmax()
+        elif style == MIN:
+            i = ratio.argmin()
+        elif style == MEDIAN:
+            med = ratio.median();
+            i = (ratio == med).argmax()
+        else:
+            raise ValueError('style %s isn\'t recognised' % style)
+
+        processed.append(group.loc[i:i])
+    joined = pandas.concat(processed)
+    joined = joined.sort_values(by=LENGTH_COL)
+    return joined
+
+def timing_plots():
+    timing_plot(
+        'random-uniform',
+        [File(CRB + 'pairwise-random-nc-20151127-174000.csv', 'k', lambda x: 2**x),
+         File(CRB + 'psfft-bench-20151128-011045-pmf1-truly_uniform-pmf2-truly_uniform.csv', 'L')],
+        [Series(0, 'NCpy_time', 'NC', {}, {'color': 'g', 'linestyle': '--'},
+                aggregate = lambda x: x.min()),
+         Series(1, 'psFFT_time', 'aFFT-C',
+                {'beta': 0.001, 'bound': np.inf, 'fast_path': 1},
+                {'color': 'b', 'linestyle': '-'},
+                aggregate = lambda x: select_with_ratio(x, 'psFFT_time', 'FFTC_time', MAX)),
+         Series(1, 'FFTC_time', 'FFT-C',
+                {'beta': 0.001, 'bound': np.inf, 'fast_path': 1},
+                {'color': 'r', 'linestyle': '-.'},
+                aggregate = lambda x: select_with_ratio(x, 'psFFT_time', 'FFTC_time', MAX)),
+         Series(1, 'psFFT_time', 'aFFT-C',
+                {'beta': 0.001, 'bound': np.inf, 'fast_path': 1},
+                {'color': 'b', 'linestyle': '-'},
+                aggregate = lambda x: select_with_ratio(x, 'psFFT_time', 'FFTC_time', MEDIAN),
+                show = False),
+         Series(1, 'FFTC_time', 'FFT-C',
+                {'beta': 0.001, 'bound': np.inf, 'fast_path': 1},
+                {'color': 'r', 'linestyle': '-.'},
+                aggregate = lambda x: select_with_ratio(x, 'psFFT_time', 'FFTC_time', MEDIAN),
+                show = False),
+         Series(1, 'psFFT_time', 'aFFT-C',
+                {'beta': 0.001, 'bound': np.inf, 'fast_path': 1},
+                {'color': 'b', 'linestyle': '-'},
+                aggregate = lambda x: x.mean(),
+                show = False),
+         Series(1, 'FFTC_time', 'FFT-C',
+                {'beta': 0.001, 'bound': np.inf, 'fast_path': 1},
+                {'color': 'r', 'linestyle': '-.'},
+                aggregate = lambda x: x.mean(),
+                show = False),
+        ],
+        relatives = [(1, 2, 'max', {'color': 'b', 'linestyle': '-'}),
+                     (3, 4, 'median', {'color': 'g', 'linestyle': '--'})])
+
+    timing_plot(
+        'shallow-sin-bounded',
+        [File(CRB + 'psfft-bench-20151128-094605-pmf1-shallow_sinusoid-pmf2-shallow_sinusoid.csv', 'L'),
+         File(CRB + 'pairwise-with-py-conv-fftc-20150212-150325-shallow_sinusoid-shallow_sinusoid-lowerbound--2.30258509299e+300.csv', 'k', lambda x: 2**x)],
+        [Series(0, 'psFFT_time', 'aFFT-C',
+                {'bound': 1e-30, 'fast_path': 1, 'beta': 0.001},
+                {'color': 'b', 'linestyle': '-'}),
+         Series(1, 'NCpy_time', 'NC', {}, {'color': 'g', 'linestyle': '--'}),
+        ],
+        relatives = [(0, 1, None, {})])
+    timing_plot(
+        'shallow-sin-unbounded',
+        [File(CRB + 'psfft-bench-20151128-094605-pmf1-shallow_sinusoid-pmf2-shallow_sinusoid.csv', 'L'),
+         File(CRB + 'pairwise-with-py-conv-fftc-20150212-150325-shallow_sinusoid-shallow_sinusoid-lowerbound--2.30258509299e+300.csv', 'k', lambda x: 2**x)],
+        [Series(0, 'psFFT_time', 'aFFT-C',
+                {'bound': np.inf, 'fast_path': 1, 'beta': 0.001},
+                {'color': 'b', 'linestyle': '-'}),
+         Series(1, 'NCpy_time', 'NC', {}, {'color': 'g', 'linestyle': '--'}),
+        ],
+        relatives = [(0, 1, None, {})])
+
+def main():
+    plt.rc('text', usetex=True)
+    plt.rc('font', family='serif',serif='Computer Modern Roman', size=15, weight='normal')
+    plt.rc('legend', fontsize=15)
+    plt.rcParams['text.latex.preamble']=[r"\usepackage{amsmath}"]
+
+    # element_plot()
+    timing_plots()
+
+if __name__ == '__main__':
+    main()

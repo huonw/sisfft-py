@@ -1,0 +1,57 @@
+#!/usr/bin/env python
+
+import pandas
+import numpy
+np = numpy
+import argparse
+import mpmath as mp
+
+import re
+
+LENGTH = '__len'
+FIND_LENGTH = re.compile('length-([0-9]*)-')
+def load_file(file):
+    name = file.name
+
+    m = FIND_LENGTH.search(name)
+    assert m is not None
+    length = int(m.group(1))
+
+    data = pandas.read_csv(file)
+    data[LENGTH] = length
+    return data
+
+def float_format(x):
+    if x == np.inf:
+        return r'overflow'
+    ten = np.floor(np.log10(x))
+    factor = np.floor(x / 10**ten)
+    return r'$%d \cdot 10^{%d}$' % (int(factor), int(ten))
+
+def make_table(datas):
+    data = pandas.concat([d['psFFTC_rel_max'] for d in datas] +
+                         [d['FFTC_rel_max'] for d in datas[:2]],
+                         axis=1)
+    print(data.apply(np.exp).to_latex(header = False,
+                                      escape = False,
+                                      float_format = float_format,
+                                      index_names = False))
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('files', metavar='FILE', nargs='+', type=argparse.FileType('r'),
+                        help = 'files to read')
+    args = parser.parse_args()
+
+    data = pandas.concat(load_file(file) for file in args.files)
+    to_render = []
+    for beta in [ 1e-9, 0.001,]:
+        this_beta = data[data['beta'] == beta]
+        grouped = this_beta[[LENGTH, 'psFFTC_rel_max', 'FFTC_rel_max']].groupby(LENGTH)
+        to_render += [grouped.median(), grouped.max()]
+    make_table(to_render)
+
+
+if __name__ == '__main__':
+    main()
