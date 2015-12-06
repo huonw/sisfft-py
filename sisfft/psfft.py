@@ -84,6 +84,15 @@ def _convolve_no_lower_bound(log_pmf1, log_pmf2, alpha,
                                enable_fast_path = enable_fast_path)[0]
     return utils.unshift(convolved, theta, (log_mgf1, 1), (log_mgf2, 1))
 
+def checked_fftc(log_pmf1, log_pmf2, alpha):
+    true_conv_len, fft_conv_len = utils.pairwise_convolution_lengths(len(log_pmf1),
+                                                                     len(log_pmf2))
+    pmf1 = np.exp(log_pmf1)
+    fft1 = fft.fft(pmf1, n = fft_conv_len)
+    return _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2,
+                            true_conv_len, fft_conv_len,
+                            alpha, NEG_INF)
+
 
 def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
                    pairwise, square_1,
@@ -352,7 +361,7 @@ def _split(log_pmf, fft_conv_len, alpha, delta,
     splits = []
     for i, idx in enumerate(sort_idx[::-1]):
         log_val = log_pmf[idx]
-        if log_val <= log_delta:
+        if log_val < log_delta:
             break
         log_next_norm_sq = np.logaddexp(log_current_norm_sq, log_val * 2.0)
         r = log_next_norm_sq / 2.0 - log_val

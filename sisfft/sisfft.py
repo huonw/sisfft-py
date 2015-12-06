@@ -130,7 +130,7 @@ def _compute_theta(log_pmf, s0, L):
     return optimize.fminbound(f, -OPT_BOUND, OPT_BOUND)
 
 def _estimate_error_bounds(L, beta, gamma):
-    alpha = 2.0 * (L - 1) / beta
+    alpha = (L - 1) / beta
     delta = gamma / (2.0 * (L - 1))
     return (alpha, delta)
 
@@ -168,7 +168,7 @@ def _accurate_error_bounds(L, beta, gamma):
 
     def compute_rbar(alpha):
         rbar, _ = compute_iterated(alpha, 0.0)
-        return rbar - beta / 2.0
+        return rbar - beta
 
     alpha = optimize.fsolve(compute_rbar, est_alpha)[0]
 
@@ -178,9 +178,68 @@ def _accurate_error_bounds(L, beta, gamma):
 
     delta = optimize.fsolve(compute_deltabar, est_delta)[0]
 
-    logging.debug('computed accurate error bounds: alpha %.20f (vs. %.20f), delta %.10g (vs. %.10g)',
+    logging.debug('computed accurate error bounds: alpha %.10g (vs. %.10g), delta %.10g (vs. %.10g)',
                   alpha, est_alpha,
                   delta, est_delta)
     assert alpha >= est_alpha
     assert delta <= est_delta
     return (alpha, delta)
+
+
+if __name__ == '__main__':
+    def _accurate_error_bounds2(L, beta, gamma):
+        beta2 = (1 + beta)**(1.0 / (L - 1)) - 1
+
+        accum = 0
+        ijs = []
+        Ljs = []
+        for i in range(int(np.log2(L)) + 1):
+            this = 2**i
+            if L & this:
+                accum += this
+                ijs.append(i)
+                Ljs.append(accum)
+
+        def Lj(j):
+            return Ljs[j - 1]
+        ij = lambda j: ijs[j - 1]
+        r = lambda i: (1 + beta2)**(2**i - 1) - 1
+        rbar = lambda j: (1 + beta2)**(Lj(j) - 1) - 1
+        d = lambda i: sum(2**(i - k) * (1 + r(k)) for k in range(0, i))
+        dbar = lambda j: (sum(d(ij(k)) for k in range(1, j + 1)) +
+                          sum(2 + rbar(k) + r(k) for k in range(2, j + 1)))
+        delta = gamma / dbar(len(Ljs))
+        return 1.0 / beta2, delta
+
+    from utils import EPS
+    logging.basicConfig(level = logging.DEBUG)
+    L = 100
+    beta = 0.1
+    gamma = 1e-1
+    alpha, delta = _accurate_error_bounds(L, beta, gamma)
+    print 'accurate to bound', '%.10g, %.10g' % (((1 + beta)**(1/(L - 1.0)) - 1)**-1, gamma / (L - 1))
+    print 'trim below bound', '%.10g, %.10g' % _accurate_error_bounds2(L, beta, gamma)
+
+    smaller = delta * (1 - EPS)
+    assert delta != smaller
+
+    n = int(1 / gamma)
+    print n
+
+    a = (gamma / n)**0.5 + EPS
+    print a, n * a, gamma / 2
+    assert a < gamma / 2
+    x = (1 - n * a - np.sqrt((1 - n * a)**2 - 2 * gamma)) / 2
+    raw = np.array([1 - a - x] + [a] * n + [x])
+    vector = np.log(raw)
+    result = psfft.convolve(vector, vector, alpha, delta, enable_fast_path = False)
+    print raw, np.sum(raw), utils.log_sum(vector)
+    computed = np.exp(result)
+    exact = np.convolve(raw, raw)
+    print computed
+    print exact
+    print ((1 - beta) * exact - gamma <= computed) & (computed <= (1 + beta) * exact)
+    print np.where(exact > gamma,
+                   np.abs(np.expm1(result - np.log(exact))) < beta,
+                   True)
+    #print np.exp(naive.convolve_naive(vector, vector))
