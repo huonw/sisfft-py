@@ -78,7 +78,7 @@ def element_plot():
 
 
 
-def timing_plot(name, files, series, relatives):
+def timing_plot(name, files, series, relatives, L_LIMIT=2**3):
     datas = []
     for i, s in enumerate(series):
         file = files[s.file]
@@ -89,7 +89,7 @@ def timing_plot(name, files, series, relatives):
         else:
             data = file.data
 
-        filter = (2**3 <= data[LENGTH_COL]) & (data[LENGTH_COL] <= 2**23)
+        filter = (L_LIMIT <= data[LENGTH_COL]) & (data[LENGTH_COL] <= 2**23)
         data = data[filter]
         if s.aggregate is not None:
             data = s.aggregate(data.groupby(LENGTH_COL, as_index=False))
@@ -219,6 +219,19 @@ def timing_plots():
         ],
         relatives = [(0, 1, None, {})])
 
+def iterated_timing_plots():
+    timing_plot(
+        'medium-sin',
+        [File('/tmp/sisfft-20151207-090417-pmf-medium_sinusoid-length-100.csv', 'L')],
+        [Series(0, 'sisFFT_time', 'sisFFT',
+                {},
+                {'color': 'b', 'linestyle': '-'}),
+         Series(0, 'NC_time', 'NC',
+                {},
+                {'color': 'g', 'linestyle': '--'})],
+        relatives = [(0, 1, None, {})],
+        L_LIMIT=0)
+
 def main():
     plt.rc('text', usetex=True)
     plt.rc('font', family='serif',serif='Computer Modern Roman', size=15, weight='normal')
@@ -226,7 +239,8 @@ def main():
     plt.rcParams['text.latex.preamble']=[r"\usepackage{amsmath}"]
 
     # element_plot()
-    timing_plots()
+    #timing_plots()
+    iterated_timing_plots()
 
 if __name__ == '__main__':
     main()
