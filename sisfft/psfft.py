@@ -221,7 +221,7 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
                                     direct_sq, bad_places_sq,
                                     COST_RATIO_SQUARE)
         if used_nc:
-            answer_sq = direct
+            answer_sq = direct_sq
 
     need_to_pairwise &= answer is None
     need_to_square &= answer_sq is None
