@@ -13,7 +13,7 @@ from timeit import default_timer
 
 DEFAULT_S0 = 0.95
 DEFAULT_TIME_LIMIT = 30000
-DEFAULT_LENGTH = 100
+DEFAULT_LENGTHS = '[100]'
 DEFAULT_LS = '(2**x for x in range(1, 32))'
 DEFAULT_BETA = 0.001
 
@@ -52,16 +52,16 @@ def other_quadratic(n):
 
 
 def write_header(f):
-    print('L,s0,beta,NC_pvalue,sisFFT_pvalue,NC_time,sisFFT_time,ratio', file = f)
+    print('n,L,s0,beta,NC_pvalue,sisFFT_pvalue,NC_time,sisFFT_time,ratio', file = f)
     f.flush()
-def write_results(f, L, s0, beta, NC_pvalue, NC_time, sisFFT_pvalue, sisFFT_time):
+def write_results(f, n, L, s0, beta, NC_pvalue, NC_time, sisFFT_pvalue, sisFFT_time):
     if not math.isnan(NC_pvalue) and not math.isnan(sisFFT_pvalue):
         ratio = NC_time/sisFFT_time
     else:
         ratio = float('nan')
-    s = '{L:d},{s0:d},{beta},{NC_pvalue:.20g},{sisFFT_pvalue:.20g},'\
+    s = '{n:d},{L:d},{s0:d},{beta},{NC_pvalue:.20g},{sisFFT_pvalue:.20g},'\
         '{NC_time:.5e},{sisFFT_time:.5e},{ratio:.1f}'.format(
-            L = L, s0 = s0, beta = beta,
+            n = n, L = L, s0 = s0, beta = beta,
             NC_pvalue = NC_pvalue, NC_time = NC_time,
             sisFFT_pvalue = sisFFT_pvalue, sisFFT_time = sisFFT_time,
             ratio = ratio)
@@ -81,8 +81,8 @@ def main():
                         help = 'python expression creating an iterable for the L to benchmark')
     parser.add_argument('-s', '--s0', metavar='RATIO', type=float, action='append',
                         help = 's0 ratios to benchmark with')
-    parser.add_argument('-n', '--length', metavar='N', default=DEFAULT_LENGTH, type=int,
-                        help = 'length of each PMF')
+    parser.add_argument('-n', '--Ns', metavar='N', default=DEFAULT_LENGTHS,
+                        help = 'python expression creating an iterable for the lengths N to benchmark')
     parser.add_argument('-o', '--out-dir', metavar='DIR', default='.',
                         help = 'directory to write files to')
     parser.add_argument('-b', '--beta', metavar='ACCURACY', type=float, action='append',
@@ -94,7 +94,7 @@ def main():
     args = parser.parse_args()
 
     ells = list(eval(args.Ls))
-    n = args.length
+    ns = list(eval(args.Ns))
     pmfs = args.pmfs
     nc_time_limit = args.nc_time_limit
     sisfft_time_limit = args.sisfft_time_limit
@@ -109,59 +109,60 @@ def main():
 
     date = datetime.now().strftime('%Y%m%d-%H%M%S')
 
-    def run(pmf_expr):
+    def run(f, n, pmf):
+        nc_done = False
+        sisfft_done = False
+        done = False
+        for L in ells:
+            nc_start = default_timer()
+            if not nc_done:
+                nc_vector = sisfft.naive.power_naive(pmf, L)
+            nc_power_time = default_timer() - nc_start
+
+            for s0ratio in s0s:
+                s0 = int(s0ratio * sisfft.utils.iterated_convolution_lengths(n, L)[0])
+                for beta in betas:
+                    #print('      s0 = %s, beta = %s' % (s0, beta))
+                    sisfft_start = default_timer()
+                    if sisfft_done:
+                        sisfft_pvalue = float('nan')
+                    else:
+                        sisfft_pvalue = sisfft.sisfft.pvalue(pmf, s0, L, beta)
+                    sisfft_time = default_timer() - sisfft_start
+
+                    nc_sum_start = default_timer()
+                    if nc_done:
+                        nc_pvalue = float('nan')
+                    else:
+                        nc_pvalue = sisfft.utils.log_sum(nc_vector[s0:])
+
+                    nc_sum_time = default_timer() - nc_sum_start
+                    nc_time = nc_power_time + nc_sum_time
+                    write_results(f,
+                                  n,
+                                  L, s0, beta,
+                                  nc_pvalue, nc_time,
+                                  sisfft_pvalue, sisfft_time)
+
+                    if not nc_done and nc_time > nc_time_limit:
+                        nc_done = True
+                    if not sisfft_done and sisfft_time > sisfft_time_limit:
+                        sisfft_done = True
+                    if nc_done and sisfft_done:
+                        # all done!
+                        return
+
+    for pmf_expr in pmfs:
         print('running ', pmf_expr)
-        pmf = eval(pmf_expr)(n)
-        pmf -= sisfft.utils.log_sum(pmf)
-        fname = 'sisfft-{date}-pmf-{name}-length-{n}.csv'.format(date = date, name=pmf_expr,
-                                                                 n = n)
+        pmf_func = eval(pmf_expr)
+        fname = 'sisfft-{date}-pmf-{name}.csv'.format(date = date, name=pmf_expr)
         with open(path.join(out_dir,fname), 'w') as f:
             write_header(f)
 
-            nc_done = False
-            sisfft_done = False
-            done = False
-            for L in ells:
-                nc_start = default_timer()
-                if not nc_done:
-                    nc_vector = sisfft.naive.power_naive(pmf, L)
-                nc_power_time = default_timer() - nc_start
-
-                for s0ratio in s0s:
-                    s0 = int(s0ratio * sisfft.utils.iterated_convolution_lengths(n, L)[0])
-                    for beta in betas:
-                        #print('      s0 = %s, beta = %s' % (s0, beta))
-                        sisfft_start = default_timer()
-                        if sisfft_done:
-                            sisfft_pvalue = float('nan')
-                        else:
-                            sisfft_pvalue = sisfft.sisfft.pvalue(pmf, s0, L, beta)
-                        sisfft_time = default_timer() - sisfft_start
-
-                        nc_sum_start = default_timer()
-                        if nc_done:
-                            nc_pvalue = float('nan')
-                        else:
-                            nc_pvalue = sisfft.utils.log_sum(nc_vector[s0:])
-
-                        nc_sum_time = default_timer() - nc_sum_start
-                        nc_time = nc_power_time + nc_sum_time
-                        write_results(f,
-                                      L, s0, beta,
-                                      nc_pvalue, nc_time,
-                                      sisfft_pvalue, sisfft_time)
-
-                        if not nc_done and nc_time > nc_time_limit:
-                            nc_done = True
-                        if not sisfft_done and sisfft_time > sisfft_time_limit:
-                            sisfft_done = True
-                        if nc_done and sisfft_done:
-                            # all done!
-                            return
-
-    for pmf_expr in pmfs:
-        run(pmf_expr)
-
+            for n in ns:
+                pmf = pmf_func(n)
+                pmf -= sisfft.utils.log_sum(pmf)
+                run(f, n, pmf)
 
 if __name__ == '__main__':
     main()
