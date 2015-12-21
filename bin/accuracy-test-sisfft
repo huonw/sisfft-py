@@ -16,8 +16,8 @@ rand = np.random.random
 
 DEFAULT_S0 = 0.95
 DEFAULT_LS = '(2**x for x in range(1, 6 + 1))'
+DEFAULT_LENGTHS = '[100]'
 DEFAULT_BETA = 0.001
-DEFAULT_LENGTH = 100
 DEFAULT_REPEAT = 10
 DEFAULT_PROCESSES = min(multiprocessing.cpu_count() / 2, 8)
 
@@ -124,8 +124,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-r', '--repeat', type=int, default=DEFAULT_REPEAT,
                         help = 'the number of random vectors')
-    parser.add_argument('-n', '--length', type=int, action='append',
-                        help = 'length of the vectors')
+    parser.add_argument('-n', '--lengths', metavar='N', default=DEFAULT_LENGTHS,
+                        help = 'length of each PMF')
     parser.add_argument('-l', '--Ls', metavar='L', default=DEFAULT_LS,
                         help = 'python expression creating an iterable for the L to benchmark')
     parser.add_argument('-s', '--s0', metavar='RATIO', type=float, action='append',
@@ -149,7 +149,7 @@ def main():
 
     ells = list(eval(args.Ls))
     repeat = args.repeat
-    lengths = args.length or [DEFAULT_LENGTH]
+    lengths = list(eval(args.lengths))
     s0s = args.s0 or [DEFAULT_S0]
     betas = args.beta or [DEFAULT_BETA]
     out_dir = args.out_dir
