@@ -135,6 +135,29 @@ def _estimate_error_bounds(L, beta, gamma):
     return (alpha, delta)
 
 def _accurate_error_bounds(L, beta, gamma):
+    beta2 = (1 + beta)**(1.0 / (L - 1)) - 1
+
+    accum = 0
+    ijs = []
+    Ljs = []
+    for i in range(int(np.log2(L)) + 1):
+        this = 2**i
+        if L & this:
+            accum += this
+            ijs.append(i)
+            Ljs.append(accum)
+
+    Lj = lambda j: Ljs[j - 1]
+    ij = lambda j: ijs[j - 1]
+    r = lambda i: (1 + beta2)**(2**i - 1) - 1
+    rbar = lambda j: (1 + beta2)**(Lj(j) - 1) - 1
+    d = lambda i: sum(2**(i - k) * (1 + r(k)) for k in range(0, i))
+    dbar = lambda j: (sum(d(ij(k)) for k in range(1, j + 1)) +
+                      sum(2 + rbar(k) + r(k) for k in range(2, j + 1)))
+    delta = gamma / dbar(len(Ljs))
+    return 1.0 / beta2, delta
+
+def _accurate_error_bounds_iterated(L, beta, gamma):
     est_alpha, est_delta = _estimate_error_bounds(L, beta, gamma)
 
     def compute_pairwise(inv_alpha, delta):
