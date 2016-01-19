@@ -52,7 +52,10 @@ def pvalue(log_pmf, s0, L, desired_beta, accurate_bounds = True):
 
     theta = _compute_theta(log_pmf, s0, L)
     logging.debug('raw theta %s', theta)
-    if theta < 0.0:
+    # theoretically this could/should be < 0.0, but that leads to
+    # infinite recursion (there are vectors for which theta is
+    # computed to be negative for both configurations)
+    if theta < -1:
         logging.debug('    computing right tail')
         # turn things around! Compute 1 - sum(left tail) instead of sum(right tail).
         p = pvalue(log_pmf[::-1], total_len - s0, L, desired_beta, accurate_bounds)
@@ -75,8 +78,8 @@ def pvalue(log_pmf, s0, L, desired_beta, accurate_bounds = True):
     return pval
 
 def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
-    # things aren't happy if this is negative
-    assert theta >= 0.0
+    # things aren't happy if this is (too) negative
+    assert theta >= -1.0
 
     log_f0, fft_len = naive.power_fft(shifted_pmf, L - 1)
     f0 = np.exp(log_f0)
@@ -115,8 +118,6 @@ def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
         # theta is negative, so we negate top and bottom, so
         # subtraction works
         frac = utils.logsubexp(-theta, 0.0) - utils.logsubexp(-factor * theta, 0.0)
-        # this shouldn't be reached at the moment
-        raise NotImplementedError()
 
     logging.debug('q %s, frac %s, factor %s', q, frac, factor)
     gamma = q + (theta * s0 - L * log_mgf) + frac + np.log(desired_beta / 2)
