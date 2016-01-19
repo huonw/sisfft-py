@@ -52,16 +52,16 @@ def other_quadratic(n):
 
 
 def write_header(f):
-    print('n,L,s0,beta,NC_pvalue,sisFFT_pvalue,NC_time,sisFFT_time,ratio', file = f)
+    print('n,L,s0,s0ratio,beta,NC_pvalue,sisFFT_pvalue,NC_time,sisFFT_time,ratio', file = f)
     f.flush()
-def write_results(f, n, L, s0, beta, NC_pvalue, NC_time, sisFFT_pvalue, sisFFT_time):
+def write_results(f, n, L, s0, s0ratio, beta, NC_pvalue, NC_time, sisFFT_pvalue, sisFFT_time):
     if not math.isnan(NC_pvalue) and not math.isnan(sisFFT_pvalue):
         ratio = NC_time/sisFFT_time
     else:
         ratio = float('nan')
-    s = '{n:d},{L:d},{s0:d},{beta},{NC_pvalue:.20g},{sisFFT_pvalue:.20g},'\
+    s = '{n:d},{L:d},{s0:d},{s0ratio},{beta},{NC_pvalue:.20g},{sisFFT_pvalue:.20g},'\
         '{NC_time:.5e},{sisFFT_time:.5e},{ratio:.1f}'.format(
-            n = n, L = L, s0 = s0, beta = beta,
+            n = n, L = L, s0 = s0, s0ratio = s0ratio, beta = beta,
             NC_pvalue = NC_pvalue, NC_time = NC_time,
             sisFFT_pvalue = sisFFT_pvalue, sisFFT_time = sisFFT_time,
             ratio = ratio)
@@ -140,7 +140,7 @@ def main():
                     nc_time = nc_power_time + nc_sum_time
                     write_results(f,
                                   n,
-                                  L, s0, beta,
+                                  L, s0, s0ratio, beta,
                                   nc_pvalue, nc_time,
                                   sisfft_pvalue, sisfft_time)
 
