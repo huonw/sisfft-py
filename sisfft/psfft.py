@@ -166,7 +166,7 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
     # we can only reuse it if it is actually computed
     can_reuse_pairwise &= need_to_pairwise
 
-    with timer('splitting'):
+    with timer('split maxima'):
         if need_to_pairwise:
             if enable_fast_path:
                 limit = _split_limit(len1, len2, None,
@@ -175,27 +175,27 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
             else:
                 limit = -NEG_INF
 
-            splits1, normalisers1 = _split(log_pmf1, fft_conv_len,
-                                           alpha, delta,
-                                           limit)
-            if splits1 is not None:
+            maxima1 = _split_maxima(log_pmf1, fft_conv_len,
+                                     alpha, delta,
+                                    limit)
+            if maxima1 is not None:
                 if enable_fast_path:
                     limit = _split_limit(len1, len2,
-                                         len(splits1),
+                                         len(maxima1),
                                          len(bad_places),
                                          COST_RATIO)
                 else:
                     limit = -NEG_INF
 
-                splits2, normalisers2 = _split(log_pmf2, fft_conv_len,
-                                               alpha, delta,
-                                               limit)
+                maxima2 = _split_maxima(log_pmf2, fft_conv_len,
+                                        alpha, delta,
+                                        limit)
             else:
-                splits2, normalisers2 = None, None
+                maxima2 = None, None
 
         if need_to_square:
             if can_reuse_pairwise:
-                splits1_sq, normalisers1_sq = splits1, normalisers1
+                maxima1_sq = maxima1
             else:
                 # different numbers so we need to re-split
                 if enable_fast_path:
@@ -204,20 +204,20 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
                                          COST_RATIO_SQUARE)
                 else:
                     limit = -NEG_INF
-                splits1_sq, normalisers1_sq = _split(log_pmf1, fft_conv_len_sq,
-                                                     alpha, delta,
-                                                     limit)
+                maxima1_sq = _split_maxima(log_pmf1, fft_conv_len_sq,
+                                           alpha, delta,
+                                           limit)
 
     if need_to_pairwise and enable_fast_path:
-        used_nc = _use_nc_if_better(log_pmf1, splits1,
-                                    log_pmf2, splits2,
+        used_nc = _use_nc_if_better(log_pmf1, maxima1,
+                                    log_pmf2, maxima2,
                                     direct, bad_places,
                                     COST_RATIO)
         if used_nc:
             answer = direct
     if need_to_square and enable_fast_path:
-        used_nc = _use_nc_if_better(log_pmf1, splits1_sq,
-                                    log_pmf1, splits1_sq,
+        used_nc = _use_nc_if_better(log_pmf1, maxima1_sq,
+                                    log_pmf1, maxima1_sq,
                                     direct_sq, bad_places_sq,
                                     COST_RATIO_SQUARE)
         if used_nc:
@@ -227,6 +227,17 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
     need_to_square &= answer_sq is None
     # we can only reuse it if it is actually computed
     can_reuse_pairwise &= need_to_pairwise
+
+    with timer('actual splits'):
+        if need_to_pairwise:
+            splits1 = _splits_from_maxima(log_pmf1, maxima1, delta)
+            splits2 = _splits_from_maxima(log_pmf2, maxima2, delta)
+
+        if need_to_square:
+            if can_reuse_pairwise:
+                splits1_sq = splits1
+            else:
+                splits1_sq = _splits_from_maxima(log_pmf1, maxima1_sq, delta)
 
     with timer('ffts'):
         if need_to_pairwise:
@@ -244,9 +255,9 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
     if need_to_pairwise:
         accum = np.repeat(NEG_INF, true_conv_len)
         with timer('defft'):
-            for i, normaliser1 in enumerate(normalisers1):
+            for i, normaliser1 in enumerate(maxima1):
                 fft1 = ffts1[i, :]
-                for j, normaliser2 in enumerate(normalisers2):
+                for j, normaliser2 in enumerate(maxima2):
                     fft2 = ffts2[j, :]
                     conv = _filtered_mult_ifft(fft1, normaliser1,
                                                fft2, normaliser2,
@@ -259,15 +270,15 @@ def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
         accum_sq = np.repeat(NEG_INF, true_conv_len_sq)
 
         with timer('defft-square'):
-            for i, normaliser1 in enumerate(normalisers1_sq):
+            for i, normaliser1 in enumerate(maxima1_sq):
                 fft1 = ffts1_sq[i, :]
                 conv_self = _filtered_mult_ifft(fft1, normaliser1,
                                                 fft1, normaliser1,
                                                 true_conv_len_sq,
                                                 fft_conv_len_sq)
                 accum_sq = np.logaddexp(accum_sq, conv_self)
-                for j in range(i + 1, len(normalisers1_sq)):
-                    normaliser2 = normalisers1_sq[j]
+                for j in range(i + 1, len(maxima1_sq)):
+                    normaliser2 = maxima1_sq[j]
                     fft2 = ffts1_sq[j, :]
                     conv = _filtered_mult_ifft(fft1, normaliser1,
                                                fft2, normaliser2,
@@ -343,8 +354,8 @@ def _direct_fft_conv(log_pmf1, pmf1, fft1, log_pmf2, true_conv_len, fft_conv_len
 
     return log_conv, bad_places
 
-def _split(log_pmf, fft_conv_len, alpha, delta,
-           split_limit):
+def _split_maxima(log_pmf, fft_conv_len, alpha, delta,
+                  split_limit):
     sort_idx = np.argsort(log_pmf)
     raw_threshold = utils.error_threshold_factor(fft_conv_len) * alpha
     log_threshold = -np.log(raw_threshold) / 2.0
@@ -353,12 +364,7 @@ def _split(log_pmf, fft_conv_len, alpha, delta,
     log_current_max = log_pmf[sort_idx[-1]]
     log_current_norm_sq = NEG_INF
 
-    def new_split():
-        return np.repeat(NEG_INF, len(log_pmf))
-    current_split = new_split()
-
     maxes = [log_current_max]
-    splits = []
     for i, idx in enumerate(sort_idx[::-1]):
         log_val = log_pmf[idx]
         if log_val < log_delta:
@@ -368,60 +374,73 @@ def _split(log_pmf, fft_conv_len, alpha, delta,
         if r < log_threshold:
             log_current_norm_sq = log_next_norm_sq
         else:
-            # threshold violated so this point needs to be in a new
-            # split
-            splits.append(current_split)
-            current_split = new_split()
-
             maxes.append(log_val)
             log_current_norm_sq = log_val * 2.0
             log_current_max = log_val
 
-            if len(splits) + 1 > split_limit:
+            if len(maxes) > split_limit:
                 logging.debug('bailing out of splits after %s elements (%s splits)',
-                              i + 1, len(splits) + 1)
-                return None, None
+                              i + 1, len(maxes))
+                return None
 
-        current_split[idx] = log_val - log_current_max
-    splits.append(current_split)
-    return np.array(splits), np.array(maxes)
+    return np.array(maxes)
 
-def _split_limit(len1, len2, splits1, len_bad_places, cost_ratio):
+def _splits_from_maxima(log_pmf, split_maxima, delta):
+    log_delta = np.log(delta)
+    pmf_len = len(log_pmf)
+    num_splits = len(split_maxima)
+    splits = np.full((num_splits, pmf_len), NEG_INF)
+
+    for i in range(num_splits):
+        if i == num_splits - 1:
+            # make sure we include the boundary itself
+            lo = np.nextafter(log_delta, NEG_INF)
+        else:
+            lo = split_maxima[i + 1]
+        hi = split_maxima[i]
+
+        elems = (lo < log_pmf) & (log_pmf <= hi)
+        np.copyto(splits[i, :], log_pmf, where=elems)
+        # normalise
+        splits[i, :] -= hi
+    return splits
+
+def _split_limit(len1, len2, maxima1, len_bad_places, cost_ratio):
     Q = max(len1, len2) if len2 is not None else len1
     nc_cost = Q * len_bad_places
     split_ratio = nc_cost / (Q * np.log2(Q) * cost_ratio)
     if len2 is None:
-        # we're squaring, so both sides have the same number of splits
+        # we're squaring, so both sides have the same number of maxima
         lim = np.sqrt(split_ratio)
     else:
         # worst case the RHS will be 1
-        other_split = 1 if splits1 is None else splits1
+        other_split = 1 if maxima1 is None else maxima1
         lim = split_ratio / other_split
     logging.debug('computed split limit for %s %s %s %s %s as %s',
-                  len1, len2, splits1, len_bad_places, cost_ratio, lim)
+                  len1, len2, maxima1, len_bad_places, cost_ratio, lim)
     return lim
 
-def _splits_to_len(splits):
-    if isinstance(splits, int) and splits in (1, 2):
-        return splits, 'post-FFT-C estimated'
+def _maxima_to_len(maxima):
+    if isinstance(maxima, int) and maxima in (1, 2):
+        return maxima, 'post-FFT-C estimated'
     else:
-        return len(splits), 'psFFT computed'
-def _is_nc_faster(len1, splits1,
-                  len2, splits2,
+        return len(maxima), 'psFFT computed'
+def _is_nc_faster(len1, maxima1,
+                  len2, maxima2,
                   len_bad_places,
                   cost_ratio):
     if len_bad_places == 0:
         nc_is_better = True
-    elif splits1 is None or splits2 is None:
+    elif maxima1 is None or maxima2 is None:
         nc_is_better = True
-        logging.debug('psFFT didn\'t compute all splits (%s, %s). Using psFFT? False',
-                      splits1, splits2)
+        logging.debug('psFFT didn\'t compute all maxima (%s, %s). Using psFFT? False',
+                      maxima1, maxima2)
     else:
         Q = max(len1, len2)
         nc_cost = min(Q * len_bad_places, len1 * len2)
 
-        len1, msg = _splits_to_len(splits1)
-        len2, _ = _splits_to_len(splits2)
+        len1, msg = _maxima_to_len(maxima1)
+        len2, _ = _maxima_to_len(maxima2)
         psfft_cost = len1 * len2 * Q * np.log2(Q)
         scaled_cost = psfft_cost * cost_ratio
         nc_is_better = scaled_cost > nc_cost
@@ -437,12 +456,12 @@ def _is_nc_faster(len1, splits1,
                       not nc_is_better)
     return nc_is_better
 
-def _use_nc_if_better(log_pmf1, splits1,
-                      log_pmf2, splits2,
+def _use_nc_if_better(log_pmf1, maxima1,
+                      log_pmf2, maxima2,
                       direct, bad_places,
                       cost_ratio):
-    nc_is_better = _is_nc_faster(len(log_pmf1), splits1,
-                                 len(log_pmf2), splits2,
+    nc_is_better = _is_nc_faster(len(log_pmf1), maxima1,
+                                 len(log_pmf2), maxima2,
                                  len(bad_places),
                                  cost_ratio)
     if nc_is_better:
