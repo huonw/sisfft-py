@@ -154,7 +154,7 @@ def _accurate_error_bounds(L, beta, gamma):
     rbar = lambda j: (1 + beta2)**(Lj(j) - 1) - 1
     d = lambda i: sum(2**(i - k) * (1 + r(k)) for k in range(0, i))
     dbar = lambda j: (sum(d(ij(k)) for k in range(1, j + 1)) +
-                      sum(2 + rbar(k) + r(k) for k in range(2, j + 1)))
+                      sum(2 + rbar(k) + r(k + 1) for k in range(1, j)))
     delta = gamma / dbar(len(Ljs))
     return 1.0 / beta2, delta
 
