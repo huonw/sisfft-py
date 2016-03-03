@@ -19,7 +19,9 @@ from os import path
 LENGTH_COL = 'plot-internal-length-column'
 RATIO_COL = 'plot-internal-ratio-column'
 CRB = '/users/pmother/huonw/vac-schol/cleanroom/benches/'
-RI = '/users/pmother/huonw/vac-schol/report/images/'
+RI = '/users/pmother/huonw/masters/thesis/images/'
+B = '/users/pmother/huonw/Dropbox/masters/benchmarks/sisfft-26fff4f99c92058a853b4efaeac37f8f892e4531/'
+Ba = '/users/pmother/huonw/Dropbox/masters/benchmarks/psfft-26fff4f99c92058a853b4efaeac37f8f892e4531/'
 
 class File(object):
     def __init__(self, name, length_col, transform_column = lambda x: x):
@@ -27,7 +29,8 @@ class File(object):
 
         self.data[LENGTH_COL] = transform_column(self.data[length_col])
 class Series(object):
-    def __init__(self, file, column, label, filters = {}, style={}, aggregate = None, show=True):
+    def __init__(self, file, column, label, filters = {}, style={}, aggregate = None, show=True,
+                 predict = None):
         self.file = file
         self.column = column
         self.label = label
@@ -35,6 +38,27 @@ class Series(object):
         self.style = style
         self.aggregate = aggregate
         self.show = show
+        self.predict = predict
+
+    def get_data(self, files, L_LIMIT, too_small, too_large):
+        file = files[self.file]
+        if self.filters:
+            keys, values = zip(*self.filters.items())
+            grouped = file.data.replace({k: np.nan for k in keys}, np.inf).groupby(keys)
+            data = grouped.get_group(values)
+        else:
+            data = file.data
+
+        filter = (L_LIMIT <= data[LENGTH_COL]) & (data[LENGTH_COL] <= 2**23) & (data[self.column] >= too_small) & (data[self.column] <= too_large)
+        data = data[filter]
+        if self.aggregate is not None:
+            data = self.aggregate(data.groupby(LENGTH_COL, as_index=False))
+        return data
+
+def symlog_plot(x, y, *args, **kwargs):
+    y = np.exp(y)
+    plt.yscale('symlog', linthreshy=1e-300)
+    return plt.plot(x, y, *args, **kwargs)
 
 def save(name):
     print('saving %s' % name)
@@ -78,21 +102,24 @@ def element_plot():
 
 
 
-def timing_plot(name, files, series, relatives, L_LIMIT=2**3):
+def timing_plot(name, var, files, series, relatives, L_LIMIT=2**3, too_small = 0, too_large = np.inf):
     datas = []
     for i, s in enumerate(series):
-        file = files[s.file]
-        if s.filters:
-            keys, values = zip(*s.filters.items())
-            grouped = file.data.replace({k: np.nan for k in keys}, np.inf).groupby(keys)
-            data = grouped.get_group(values)
-        else:
-            data = file.data
-
-        filter = (L_LIMIT <= data[LENGTH_COL]) & (data[LENGTH_COL] <= 2**23)
-        data = data[filter]
-        if s.aggregate is not None:
-            data = s.aggregate(data.groupby(LENGTH_COL, as_index=False))
+        data = s.get_data(files, L_LIMIT, too_small, too_large)
+        if s.predict is not None:
+            lengths = series[s.predict].get_data(files, L_LIMIT, too_small, too_large)[LENGTH_COL]
+            Y = np.log(data[s.column])
+            X = np.log(data[LENGTH_COL])
+            filt = np.invert(np.isnan(X) | np.isnan(Y))
+            X = X[filt]
+            Y = Y[filt]
+            a, b = np.polyfit(X, Y, 1)
+            print(a, b)
+            predicted = np.exp(b) * lengths**a
+            print(lengths)
+            print(predicted)
+            print(np.exp(X))
+            print(np.exp(Y))
         if s.show:
             plt.loglog(data[LENGTH_COL],
                        data[s.column],
@@ -102,9 +129,10 @@ def timing_plot(name, files, series, relatives, L_LIMIT=2**3):
 
     plt.legend(loc = 'upper left')
     plt.ylabel('time (s)')
-    plt.xlabel('$L$')
+    plt.xlabel('$%s$' % var)
     plt.gca().yaxis.grid(True)
     x_lo,x_hi, _, _ = plt.axis()
+    plt.xlim(x_lo**0.99, x_hi**1.01)
     save(name)
 
     just_one = len(relatives) == 1
@@ -120,19 +148,20 @@ def timing_plot(name, files, series, relatives, L_LIMIT=2**3):
         if extra is not None:
             print(extra)
             label = '%s (%s)' % (label, extra)
-        print(merged)
+
         plt.loglog(merged[LENGTH_COL],
                    merged[RATIO_COL],
                    basex = 2,
                    **style)[0].set_label(label)
         if just_one:
             plt.ylabel(label)
-    plt.xlabel('$L$')
+    plt.xlabel('$%s$' % var)
     if not just_one:
         plt.ylabel('ratio')
         plt.legend(loc = 'upper right')
     plt.gca().yaxis.grid(True)
-    plt.xlim(x_lo, x_hi)
+    plt.xlim(x_lo**0.99, x_hi**1.01)
+    #plt.xlim(x_lo, x_hi)
     save(name + '-relative')
 
 MAX = 0
@@ -153,84 +182,289 @@ def select_with_ratio(grouped, col1, col2, style):
             i = (ratio == med).argmax()
         else:
             raise ValueError('style %s isn\'t recognised' % style)
-
+        print(group.loc[i:i])
         processed.append(group.loc[i:i])
     joined = pandas.concat(processed)
-    joined = joined.sort_values(by=LENGTH_COL)
+    try:
+        joined = joined.sort_values(by=LENGTH_COL)
+    except AttributeError:
+        joined = joined.sort(columns = [LENGTH_COL])
     return joined
 
-def timing_plots():
+def random_timing_plots():
     timing_plot(
-        'random-uniform',
-        [File(CRB + 'pairwise-random-nc-20151127-174000.csv', 'k', lambda x: 2**x),
-         File(CRB + 'psfft-bench-20151128-011045-pmf1-truly_uniform-pmf2-truly_uniform.csv', 'L')],
-        [Series(0, 'NCpy_time', 'NC', {}, {'color': 'g', 'linestyle': '--'},
+        'random-uniform', 'L',
+        [File(Ba + 'psfft-bench-20160211-165213-pmf1-truly_uniform-pmf2-truly_uniform.csv', 'L')],
+        [Series(0, 'NC_time', 'NC', {}, {'color': 'g', 'linestyle': '', 'marker': '+'},
                 aggregate = lambda x: x.min()),
-         Series(1, 'psFFT_time', 'aFFT-C',
+         Series(0, 'psFFT_time', 'aFFT-C',
                 {'beta': 0.001, 'bound': np.inf, 'fast_path': 1},
-                {'color': 'b', 'linestyle': '-'},
+                {'color': 'b', 'linestyle': '', 'marker': '.'},
                 aggregate = lambda x: select_with_ratio(x, 'psFFT_time', 'FFTC_time', MAX)),
-         Series(1, 'FFTC_time', 'FFT-C',
+         Series(0, 'FFTC_time', 'FFT-C',
                 {'beta': 0.001, 'bound': np.inf, 'fast_path': 1},
-                {'color': 'r', 'linestyle': '-.'},
+                {'color': 'r', 'linestyle': '', 'marker': 'x'},
                 aggregate = lambda x: select_with_ratio(x, 'psFFT_time', 'FFTC_time', MAX)),
-         Series(1, 'psFFT_time', 'aFFT-C',
+         Series(0, 'psFFT_time', 'aFFT-C',
                 {'beta': 0.001, 'bound': np.inf, 'fast_path': 1},
-                {'color': 'b', 'linestyle': '-'},
+                {'color': 'b', 'linestyle': '', 'marker': '.'},
                 aggregate = lambda x: select_with_ratio(x, 'psFFT_time', 'FFTC_time', MEDIAN),
                 show = False),
-         Series(1, 'FFTC_time', 'FFT-C',
+         Series(0, 'FFTC_time', 'FFT-C',
                 {'beta': 0.001, 'bound': np.inf, 'fast_path': 1},
-                {'color': 'r', 'linestyle': '-.'},
+                {'color': 'r', 'linestyle': '', 'marker': 'x'},
                 aggregate = lambda x: select_with_ratio(x, 'psFFT_time', 'FFTC_time', MEDIAN),
                 show = False),
-         Series(1, 'psFFT_time', 'aFFT-C',
+         Series(0, 'psFFT_time', 'aFFT-C',
                 {'beta': 0.001, 'bound': np.inf, 'fast_path': 1},
-                {'color': 'b', 'linestyle': '-'},
+                {'color': 'b', 'linestyle': '', 'marker': '.'},
                 aggregate = lambda x: x.mean(),
                 show = False),
-         Series(1, 'FFTC_time', 'FFT-C',
+         Series(0, 'FFTC_time', 'FFT-C',
                 {'beta': 0.001, 'bound': np.inf, 'fast_path': 1},
-                {'color': 'r', 'linestyle': '-.'},
+                {'color': 'r', 'linestyle': '', 'marker': 'x'},
                 aggregate = lambda x: x.mean(),
                 show = False),
         ],
-        relatives = [(1, 2, 'max', {'color': 'b', 'linestyle': '-'}),
-                     (3, 4, 'median', {'color': 'g', 'linestyle': '--'})])
+        relatives = [(1, 2, 'max', {'color': 'b', 'linestyle': '', 'marker': '.'}),
+                     (3, 4, 'median', {'color': 'g', 'linestyle': '', 'marker': 'x'})],
+        too_large = 1e4)
 
-    timing_plot(
-        'shallow-sin-bounded',
-        [File(CRB + 'psfft-bench-20151128-094605-pmf1-shallow_sinusoid-pmf2-shallow_sinusoid.csv', 'L'),
-         File(CRB + 'pairwise-with-py-conv-fftc-20150212-150325-shallow_sinusoid-shallow_sinusoid-lowerbound--2.30258509299e+300.csv', 'k', lambda x: 2**x)],
-        [Series(0, 'psFFT_time', 'aFFT-C',
-                {'bound': 1e-30, 'fast_path': 1, 'beta': 0.001},
-                {'color': 'b', 'linestyle': '-'}),
-         Series(1, 'NCpy_time', 'NC', {}, {'color': 'g', 'linestyle': '--'}),
-        ],
-        relatives = [(0, 1, None, {})])
-    timing_plot(
-        'shallow-sin-unbounded',
-        [File(CRB + 'psfft-bench-20151128-094605-pmf1-shallow_sinusoid-pmf2-shallow_sinusoid.csv', 'L'),
-         File(CRB + 'pairwise-with-py-conv-fftc-20150212-150325-shallow_sinusoid-shallow_sinusoid-lowerbound--2.30258509299e+300.csv', 'k', lambda x: 2**x)],
-        [Series(0, 'psFFT_time', 'aFFT-C',
-                {'bound': np.inf, 'fast_path': 1, 'beta': 0.001},
-                {'color': 'b', 'linestyle': '-'}),
-         Series(1, 'NCpy_time', 'NC', {}, {'color': 'g', 'linestyle': '--'}),
-        ],
-        relatives = [(0, 1, None, {})])
+def timing_plots():
+    # timing_plot(
+    #     'shallow-sin-bounded',
+    #     [File(CRB + 'psfft-bench-20151128-094605-pmf1-shallow_sinusoid-pmf2-shallow_sinusoid.csv', 'L'),
+    #      File(CRB + 'pairwise-with-py-conv-fftc-20150212-150325-shallow_sinusoid-shallow_sinusoid-lowerbound--2.30258509299e+300.csv', 'k', lambda x: 2**x)],
+    #     [Series(0, 'psFFT_time', 'aFFT-C',
+    #             {'bound': 1e-30, 'fast_path': 1, 'beta': 0.001},
+    #             {'color': 'b', 'linestyle': '-'}),
+    #      Series(1, 'NCpy_time', 'NC', {}, {'color': 'g', 'linestyle': '--'}, predict = 0),
+    #     ],
+    #     relatives = [(0, 1, None, {})])
+    # timing_plot(
+    #     'shallow-sin-unbounded',
+    #     [File(CRB + 'psfft-bench-20151128-094605-pmf1-shallow_sinusoid-pmf2-shallow_sinusoid.csv', 'L'),
+    #      File(CRB + 'pairwise-with-py-conv-fftc-20150212-150325-shallow_sinusoid-shallow_sinusoid-lowerbound--2.30258509299e+300.csv', 'k', lambda x: 2**x)],
+    #     [Series(0, 'psFFT_time', 'aFFT-C',
+    #             {'bound': np.inf, 'fast_path': 1, 'beta': 0.001},
+    #             {'color': 'b', 'linestyle': '-'}),
+    #      Series(1, 'NCpy_time', 'NC', {}, {'color': 'g', 'linestyle': '--'}, predict = 0),
+    #     ],
+    #     relatives = [(0, 1, None, {})])
 
-def iterated_timing_plots():
-    timing_plot(
-        'medium-sin',
-        [File('/tmp/sisfft-20151207-090417-pmf-medium_sinusoid-length-100.csv', 'L')],
-        [Series(0, 'sisFFT_time', 'sisFFT',
-                {},
-                {'color': 'b', 'linestyle': '-'}),
+    shallow_sin = File(Ba + 'psfft-bench-20160201-135626-pmf1-shallow_sinusoid-pmf2-shallow_sinusoid.csv', 'L')
+    plot = lambda name, bound, beta: timing_plot(
+        name, 'L',
+        [shallow_sin],
+        [Series(0, 'psFFT_time', 'aFFT-C',
+               {'bound': bound, 'fast_path': 1, 'beta': beta},
+               {'color': 'b', 'marker': '.', 'linestyle': ''}),
          Series(0, 'NC_time', 'NC',
-                {},
-                {'color': 'g', 'linestyle': '--'})],
-        relatives = [(0, 1, None, {})],
-        L_LIMIT=0)
+                {'bound': bound, 'fast_path': 1, 'beta': beta},
+                {'color': 'g', 'marker': 'x', 'linestyle': ''})],
+        relatives = [(0, 1, None, {'marker': '.', 'linestyle': ''})],
+        too_large = 1e4)
+
+    plot('afftc-shallow-sin-bounded', 1e-30, 1e-3),
+    plot('afftc-shallow-sin-unbounded', np.inf, 1e-3),
+    plot('afftc-shallow-sin-unbounded-1e-7', np.inf, 1e-7),
+    plot('afftc-shallow-sin-unbounded-1e-1', np.inf, 1e-1),
+
+
+def sisfft_plots():
+    plot = lambda name, file, filter: timing_plot(
+        name, 'L',
+        [File(B + file, 'L')],
+        [Series(0, 'sisFFT_time', 'sisFFT',
+                filter,
+                {'color': 'b', 'marker': '.', 'linestyle': ''}),
+         Series(0, 'NC_time', 'NC',
+                filter,
+                {'color': 'g', 'marker': 'x', 'linestyle': ''})],
+        relatives = [(0, 1, None, {'marker': '.', 'linestyle': ''})],
+        L_LIMIT=1,
+        too_small = 1e-4)
+    for n in [128]:
+        for beta in [0.1, 1e-3, 1e-7]:
+            for s0ratio in [0.95]:
+                # plot('sisfft-medium-sin',
+                #      'sisfft-20160122-012250-pmf-medium_sinusoid.csv',
+                #      {'n': n, 'beta': beta, 's0ratio': s0ratio})
+                plot('sisfft-shallow-sin-%s-%.0e-%d' % (n, beta, int(s0ratio * 100)),
+                     'sisfft-20160205-232402-pmf-shallow_sinusoid.csv',
+                     {'n': n, 'beta': beta, 's0ratio': s0ratio})
+
+
+def splits_plot(name, x, log_pmf, alpha, Lnorm=2):
+    from matplotlib.patches import Rectangle
+    _, fft_len = sisfft.utils.pairwise_convolution_lengths(len(x), len(x))
+    maximas = sisfft.psfft._split_maxima(log_pmf, fft_len, alpha, -float('inf'),
+                                             float('inf'))
+
+    maximas = np.append(maximas, log_pmf.min())
+    rect = Rectangle((x.min(), np.exp(maximas[-2])),
+                     x.max() - x.min(), np.exp(maximas[3]) - np.exp(maximas[-2]),
+                     transform=plt.gca().transData)
+    l = symlog_plot(x, log_pmf, color='k',linestyle='--')
+    l[0].set_clip_path(rect)
+    colours = ['#ff0000', '#0000ff', '#00b200']
+
+    for i, (hi, lo) in enumerate(zip(maximas, maximas[1:])):
+        gm = np.exp((hi + lo) / 2)
+        hi = np.exp(hi)
+        lo = np.exp(lo)
+        c = None
+        try:
+            c = colours[i]
+        except IndexError:
+            if i == len(maximas) - 2:
+                c = '#cc00e5'
+
+        if i % 2 == 1:
+            plt.axhspan(lo, hi, color='k', alpha=0.1)
+            # plt.axhline(hi), linestyle='--',color='b')
+        if c is not None:
+            height = hi - lo
+            if i == 0:
+                # avoid cutting the line
+                height *= 2
+
+            rect = Rectangle((x.min(), lo), x.max() - x.min(), height,
+                             transform=plt.gca().transData)
+            #rect = Rectangle((0, 0), 400, 1000)
+            line = symlog_plot(x, log_pmf, color=c, linewidth=2)
+            line[0].set_clip_path(rect)
+
+        plt.text(5, gm, str(i + 1), va='center')
+    _,_,y1,y2 = plt.axis()
+    plt.ylim((y1 * 1e-1, y2*1e1))
+    save(name)
+
+def concave_quadratic_pmf():
+    s = np.arange(128.0)
+    log_pmf = 1/60.0 * s * (10 - s)
+    log_pmf -= log_sum(log_pmf)
+    return s, log_pmf
+def convex_quadratic_pmf():
+    s = np.arange(128)
+    log_pmf = 1/60.0 * s * (s - 256)
+    log_pmf -= log_sum(log_pmf)
+    return s, log_pmf
+
+def splits_plots():
+    s, log_pmf = concave_quadratic_pmf()
+    alpha = 1e3
+
+    theta = sisfft.psfft._compute_theta(log_pmf, log_pmf)
+    shifted_log_pmf, log_mgf = sisfft.utils.shift(log_pmf, theta)
+
+    splits_plot('splits-unshifted', s, log_pmf, alpha)
+    splits_plot('splits-shifted', s, shifted_log_pmf, alpha)
+
+def print_pvalue(name, v, s0):
+    p = log_sum(v[s0:])
+    print(name, '%.20f' % p, np.exp(p))
+
+def single_conv_plot(name, var, basic, log_pmf1, log_pmf2, funcs, pvalue = None):
+    nc = sisfft.naive.convolve_naive(log_pmf1, log_pmf2)
+    x = np.arange(len(nc))
+    symlog_plot(x, nc, ':', color='blue')[0].set_label(basic)
+
+    for series_name, f, args, kwargs in funcs:
+        conv = f(log_pmf1, log_pmf2)
+        filtered = np.where(conv == -np.inf, np.nan, conv)
+        symlog_plot(x, filtered, *args, **kwargs)[0].set_label(series_name)
+        if pvalue is not None:
+            print_pvalue(series_name, conv, pvalue)
+    if pvalue is not None:
+        print_pvalue('exact', nc, pvalue)
+        plt.axvline(pvalue, color='k', linestyle='--', linewidth=0.8)
+        plt.axvspan(pvalue, max(x), alpha=0.1, color='k',edgecolor='b')
+        lo, hi = plt.ylim()
+        plt.text(pvalue + max(x) * 0.01, lo**0.9*hi**0.1, '$%s_0$' % var,
+                 ha='left', va='center', fontsize=15)
+
+    plt.xlim(0, max(x))
+    plt.ylabel(r'$\boldsymbol{p}(%s)$' % var)
+    plt.xlabel('$%s$' % var)
+    plt.legend(loc = 'lower left')
+    save(name)
+
+def sfft_shift(s0, log_pmf, L):
+    total_len, fft_len = sisfft.utils.iterated_convolution_lengths(len(log_pmf), L)
+    theta0 = sisfft.sisfft._compute_theta(log_pmf, s0, L)
+    shifted_pmf, log_mgf = sisfft.utils.shift(log_pmf, theta0)
+    return theta0, shifted_pmf, log_mgf, total_len, fft_len
+def nc_sfft_shift(s0, log_pmf, L):
+    assert L == 2
+    theta0, shifted_pmf, log_mgf, total_len, fft_len = sfft_shift(s0, log_pmf, L)
+    return sisfft.naive.convolve_naive(shifted_pmf, shifted_pmf)
+
+def sfft_fftc(s0, log_pmf, L):
+    theta0, shifted_pmf, log_mgf, total_len, fft_len = sfft_shift(s0, log_pmf, L)
+    conv = np.fft.ifft(np.fft.fft(np.exp(shifted_pmf), n = fft_len)**L)
+    return theta0, np.log(abs(np.real(conv[:total_len]))), log_mgf, fft_len
+def sfft_filtered(s0, log_pmf, L):
+    theta0, conv, log_mgf, fft_len = sfft_fftc(s0, log_pmf, L)
+    threshold = np.log(L * np.log2(fft_len) * 10 * 2**-53)
+    conv[conv < threshold] = -np.inf
+    return theta0, conv, log_mgf
+def sfft(s0, log_pmf, L):
+    theta0, conv, log_mgf = sfft_filtered(s0, log_pmf, L)
+    return sisfft.utils.unshift(conv, theta0, (log_mgf, L))
+
+def sfft_plot(name, log_pmf, s0):
+    single_conv_plot(name, 's', r'$\boldsymbol{p}^{\ast L}$', log_pmf, log_pmf,
+                     [(r'$\boldsymbol{p}_{\theta_0}^{\ast L}$', lambda v, _: nc_sfft_shift(s0, v, 2),
+                       (':',), {'color': 'green'}),
+                      (r'$\widetilde{\boldsymbol{p}_{\theta_0}^{\ast L}}$ (unfiltered)', lambda v, _: sfft_fftc(s0, v, 2)[1],
+                       (), {'color': 'purple', 'dashes': (5, 2)}),
+                      (r'$\widetilde{\boldsymbol{p}_{\theta_0}^{\ast L}}$', lambda v, _: sfft_filtered(s0, v, 2)[1],
+                       (), {'color': 'purple'}),
+                      (r'$\widetilde{\boldsymbol{p}^{\ast L}}$', lambda v, _: sfft(s0, v, 2),
+                       (), {'color': 'red'})],
+                     pvalue = s0)
+
+def sisfft_shift(s0, log_pmf, L, beta):
+    return sfft_shift(s0, log_pmf, L)
+def nc_sisfft_shift(s0, log_pmf, L, beta):
+    return nc_sfft_shift(s0, log_pmf, L)
+def sisfft_unshifted(s0, log_pmf, L, beta):
+    theta0, shifted_pmf, log_mgf, total_len, fft_len = sisfft_shift(s0, log_pmf, L, beta)
+    log_bound = sisfft.sisfft._lower_bound(log_pmf, shifted_pmf, theta0, log_mgf,
+                                           s0, L, beta)
+    bound = np.exp(log_bound)
+    conv = sisfft.sisfft.conv_power(shifted_pmf, L, 2.0 / beta, bound)
+    return theta0, conv, log_mgf
+def sisfft_(s0, log_pmf, L, beta):
+    theta0, conv, log_mgf = sisfft_unshifted(s0, log_pmf, L, beta)
+    return sisfft.utils.unshift(conv, theta0, (log_mgf, L))
+
+def sisfft_plot(name, log_pmf, s0, beta):
+    single_conv_plot(name, 's', r'$\boldsymbol{p}^{\ast L}$', log_pmf, log_pmf,
+                     [(r'$\boldsymbol{p}_{\theta_0}^{\ast L}$', lambda v, _: nc_sisfft_shift(s0, v, 2, beta),
+                       (':',), {'color': 'green'}),
+                      (r'$\widetilde{\boldsymbol{p}_{\theta_0}^{\ast L}}$', lambda v, _: sisfft_unshifted(s0, v, 2, beta)[1],
+                       (), {'color': 'purple'}),
+                      (r'$\widetilde{\boldsymbol{p}^{\ast L}}$', lambda v, _: sisfft_(s0, v, 2, beta),
+                       (), {'color': 'red'})],
+                     pvalue = s0)
+
+def single_conv_plots():
+    s, log_pmf = concave_quadratic_pmf()
+
+    beta = 0.001
+    s0 = 215
+    sisfft_plot('sisfft-good', log_pmf, s0, beta)
+    single_conv_plot('fftc-bad', 'k', 'Exact', log_pmf, log_pmf,
+                     [('FFT-C', sisfft.naive.convolve_fft, (), {'color': 'red'})],
+                     pvalue = s0)
+
+    sfft_plot('sfft-good', log_pmf, s0)
+    s, log_pmf2 = convex_quadratic_pmf()
+    sisfft_plot('sisfft-good2', log_pmf2, s0, beta)
+    sfft_plot('sfft-bad', log_pmf2, s0)
+
 
 def main():
     plt.rc('text', usetex=True)
@@ -239,8 +473,11 @@ def main():
     plt.rcParams['text.latex.preamble']=[r"\usepackage{amsmath}"]
 
     # element_plot()
-    #timing_plots()
-    iterated_timing_plots()
+    random_timing_plots()
+    timing_plots()
+    sisfft_plots()
+    splits_plots()
+    single_conv_plots()
 
 if __name__ == '__main__':
     main()
