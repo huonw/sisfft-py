@@ -23,7 +23,7 @@ def convolve(log_pmf1, log_pmf2, alpha, delta = None,
              enable_fast_path = True):
     # assert len(log_pmf1) == len(log_pmf2)
     if delta is not None:
-        return _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
+        return _afftc_noshift(log_pmf1, log_pmf2, alpha, delta,
                               pairwise = True,
                               square_1 = False,
                               enable_fast_path = enable_fast_path)[0]
@@ -35,7 +35,7 @@ def convolve_square(log_pmf, alpha, delta = None):
     if delta is None:
         return convolve(log_pmf, log_pmf, alpha, delta)
     else:
-        return _psfft_noshift(log_pmf, np.array([]), alpha, delta,
+        return _afftc_noshift(log_pmf, np.array([]), alpha, delta,
                               pairwise = False,
                               square_1 = True,
                               enable_fast_path = True)[1]
@@ -50,7 +50,7 @@ def convolve_and_square(log_pmf1, log_pmf2, alpha, delta = None):
         sq = convolve_square(log_pmf1, alpha, None)
         return co, sq
     else:
-        return _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
+        return _afftc_noshift(log_pmf1, log_pmf2, alpha, delta,
                               pairwise = True, square_1 = True,
                               enable_fast_path = True)
 
@@ -78,7 +78,7 @@ def _convolve_no_lower_bound(log_pmf1, log_pmf2, alpha,
     theta = _compute_theta(log_pmf1, log_pmf2)
     s1, log_mgf1 = utils.shift(log_pmf1, theta)
     s2, log_mgf2 = utils.shift(log_pmf2, theta)
-    convolved = _psfft_noshift(s1, s2, alpha, NEG_INF,
+    convolved = _afftc_noshift(s1, s2, alpha, NEG_INF,
                                pairwise = True,
                                square_1 = False,
                                enable_fast_path = enable_fast_path)[0]
@@ -94,7 +94,7 @@ def checked_fftc(log_pmf1, log_pmf2, alpha):
                             alpha, NEG_INF)
 
 
-def _psfft_noshift(log_pmf1, log_pmf2, alpha, delta,
+def _afftc_noshift(log_pmf1, log_pmf2, alpha, delta,
                    pairwise, square_1,
                    enable_fast_path):
     """This function does some sort of pairwise convolution with its arguments, it has three modes:
@@ -424,7 +424,7 @@ def _maxima_to_len(maxima):
     if isinstance(maxima, int) and maxima in (1, 2):
         return maxima, 'post-FFT-C estimated'
     else:
-        return len(maxima), 'psFFT computed'
+        return len(maxima), 'psfft computed'
 def _is_nc_faster(len1, maxima1,
                   len2, maxima2,
                   len_bad_places,
@@ -433,7 +433,7 @@ def _is_nc_faster(len1, maxima1,
         nc_is_better = True
     elif maxima1 is None or maxima2 is None:
         nc_is_better = True
-        logging.debug('psFFT didn\'t compute all maxima (%s, %s). Using psFFT? False',
+        logging.debug('psfft didn\'t compute all maxima (%s, %s). Using psfft? False',
                       maxima1, maxima2)
     else:
         Q = max(len1, len2)
@@ -441,13 +441,13 @@ def _is_nc_faster(len1, maxima1,
 
         len1, msg = _maxima_to_len(maxima1)
         len2, _ = _maxima_to_len(maxima2)
-        psfft_cost = len1 * len2 * Q * np.log2(Q)
-        scaled_cost = psfft_cost * cost_ratio
+        afftc_cost = len1 * len2 * Q * np.log2(Q)
+        scaled_cost = afftc_cost * cost_ratio
         nc_is_better = scaled_cost > nc_cost
 
         logging.debug('%s %d & %d splits, with %d locations to recompute, '
                       'giving scaled cost %.2e (vs. NC cost %.2e). '
-                      'Using psFFT? %s',
+                      'Using psfft? %s',
                       msg,
                       len1, len2,
                       len_bad_places,

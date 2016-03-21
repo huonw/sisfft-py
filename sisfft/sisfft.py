@@ -2,7 +2,7 @@ import numpy as np, scipy as sc
 from numpy.fft import fft, ifft
 from scipy import optimize
 import logging
-import psfft, naive, utils
+import afftc, naive, utils
 from utils import NEG_INF
 
 OPT_BOUND = 1e10
@@ -29,15 +29,15 @@ def conv_power(log_pmf, L, desired_alpha, desired_delta):
                 answer = pmf_power
             else:
                 if need_to_square:
-                    answer, pmf_power = psfft.convolve_and_square(pmf_power, answer, alpha, delta)
+                    answer, pmf_power = afftc.convolve_and_square(pmf_power, answer, alpha, delta)
                     squared = True
                 else:
-                    answer = psfft.convolve(pmf_power, answer, alpha, delta)
+                    answer = afftc.convolve(pmf_power, answer, alpha, delta)
 
         if not need_to_square:
             break
         if not squared:
-            pmf_power = psfft.convolve_square(pmf_power, alpha, delta)
+            pmf_power = afftc.convolve_square(pmf_power, alpha, delta)
 
 
     return answer
