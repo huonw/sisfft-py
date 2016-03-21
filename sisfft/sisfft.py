@@ -9,6 +9,8 @@ OPT_BOUND = 1e10
 THETA_LIMIT = 1e4
 
 def conv_power(log_pmf, L, desired_alpha, desired_delta):
+    """Compute $log(exp(log_pmf)**L)$ with overall accuracy parameters
+       $desired_alpha$ and $desired_delta$."""
     if L == 0:
         return np.array([0.0])
     elif L == 1:
@@ -43,6 +45,8 @@ def conv_power(log_pmf, L, desired_alpha, desired_delta):
     return answer
 
 def pvalue(log_pmf, s0, L, desired_beta):
+    """Compute $log((exp(log_pmf)**L)[s0:])$, such that the relative error
+       to the exact answer is less than or equal to $desired_beta$."""
     total_len, _ = utils.iterated_convolution_lengths(len(log_pmf), L)
     if s0 >= total_len:
         return NEG_INF

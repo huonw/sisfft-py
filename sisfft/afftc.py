@@ -21,6 +21,8 @@ ESTIMATE_TWO_SPLITS = 2
 
 def convolve(log_pmf1, log_pmf2, alpha, delta = None,
              enable_fast_path = True):
+    """Compute $log(exp(log_pmf1) * exp(log_pmf2))$, by trimming then
+       convolving (if delta is not None)."""
     # assert len(log_pmf1) == len(log_pmf2)
     if delta is not None:
         return _afftc_noshift(log_pmf1, log_pmf2, alpha, delta,

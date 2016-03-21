@@ -7,6 +7,7 @@ config = {
     'name': 'sisfft',
     'version': '0.1',
     'test_suite': 'tests',
+    'packages': ['sisfft']
 }
 
 setup(**config)
