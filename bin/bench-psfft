@@ -102,23 +102,23 @@ def run(pmf1_expr, pmf2_expr, betas, bounds, paths,
         for n in lengths:
             for i in range(repeat):
                 pmf1 = pmf1_func(n)
-                pmf1 -= sisfft.utils.log_sum(pmf1)
+                pmf1 -= sisfft._utils.log_sum(pmf1)
                 pmf2 = pmf2_func(n)
-                pmf2 -= sisfft.utils.log_sum(pmf2)
+                pmf2 -= sisfft._utils.log_sum(pmf2)
 
-                nc_time = timeit(i != 0 or nc_done, lambda: sisfft.naive.convolve_naive(pmf1, pmf2))
+                nc_time = timeit(i != 0 or nc_done, lambda: sisfft._naive.convolve_naive(pmf1, pmf2))
                 # seed the transform lengths
-                sisfft.naive.convolve_fft(pmf1, pmf2)
-                fftc_time = timeit(fftc_done, lambda: sisfft.naive.convolve_fft(pmf1, pmf2))
+                sisfft._naive.convolve_fft(pmf1, pmf2)
+                fftc_time = timeit(fftc_done, lambda: sisfft._naive.convolve_fft(pmf1, pmf2))
 
                 for beta in betas:
                     for bound in bounds:
                         for enable_fast_path in paths:
                             psfftc_time = timeit(
                                 psfft_done,
-                                lambda: sisfft.psfft.convolve(pmf1, pmf2, 1.0 / beta,
-                                                              bound,
-                                                              enable_fast_path = enable_fast_path))
+                                lambda: sisfft.log_convolve(pmf1, pmf2, 1.0 / beta,
+                                                            bound,
+                                                            enable_fast_path = enable_fast_path))
 
                             write_results(f, n, beta, bound, enable_fast_path,
                                           nc_time,

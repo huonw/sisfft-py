@@ -1,7 +1,7 @@
 import numpy as np
 import unittest
 from sisfft.timer import timer
-from sisfft import naive
+from sisfft import _naive as naive
 
 TEST_REPEATS = 10
 TEST_LENGTH = 100

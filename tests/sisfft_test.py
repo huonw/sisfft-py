@@ -5,7 +5,7 @@ import logging
 import cache
 
 from sisfft.timer import timer
-from sisfft import sisfft, utils, naive
+from sisfft import _sisfft as sisfft, _utils as utils, _naive as naive
 
 TEST_REPEATS = 1 # too slow
 TEST_LENGTH = 100

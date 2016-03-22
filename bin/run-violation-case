@@ -29,11 +29,11 @@ def main():
 
         pmf = np.load(name)
 
-        sisfft_pvalue = sisfft.sisfft.pvalue(pmf, s0, L, beta)
+        sisfft_pvalue = sisfft._sisfft.pvalue(pmf, s0, L, beta)
 
-        nc_pvalue = sisfft.utils.log_sum(sisfft.naive.power_naive(pmf, L)[s0:])
+        nc_pvalue = sisfft._utils.log_sum(sisfft._naive.power_naive(pmf, L)[s0:])
 
-        abs_diff = sisfft.utils.logsubexp(max(nc_pvalue, sisfft_pvalue),
+        abs_diff = sisfft._utils.logsubexp(max(nc_pvalue, sisfft_pvalue),
                                           min(nc_pvalue, sisfft_pvalue))
         rel_error = np.exp(abs_diff - nc_pvalue)
         print("%f %f\n%f %s" % (sisfft_pvalue, nc_pvalue, rel_error,

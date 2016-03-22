@@ -116,25 +116,25 @@ def main():
         for L in ells:
             nc_start = default_timer()
             if not nc_done:
-                nc_vector = sisfft.naive.power_naive(pmf, L)
+                nc_vector = sisfft._naive.power_naive(pmf, L)
             nc_power_time = default_timer() - nc_start
 
             for s0ratio in s0s:
-                s0 = int(s0ratio * sisfft.utils.iterated_convolution_lengths(n, L)[0])
+                s0 = int(s0ratio * sisfft._utils.iterated_convolution_lengths(n, L)[0])
                 for beta in betas:
                     #print('      s0 = %s, beta = %s' % (s0, beta))
                     sisfft_start = default_timer()
                     if sisfft_done:
                         sisfft_pvalue = float('nan')
                     else:
-                        sisfft_pvalue = sisfft.sisfft.pvalue(pmf, s0, L, beta)
+                        sisfft_pvalue = sisfft.log_pvalue(pmf, s0, L, beta)
                     sisfft_time = default_timer() - sisfft_start
 
                     nc_sum_start = default_timer()
                     if nc_done:
                         nc_pvalue = float('nan')
                     else:
-                        nc_pvalue = sisfft.utils.log_sum(nc_vector[s0:])
+                        nc_pvalue = sisfft._utils.log_sum(nc_vector[s0:])
 
                     nc_sum_time = default_timer() - nc_sum_start
                     nc_time = nc_power_time + nc_sum_time
@@ -161,7 +161,7 @@ def main():
 
             for n in ns:
                 pmf = pmf_func(n)
-                pmf -= sisfft.utils.log_sum(pmf)
+                pmf -= sisfft._utils.log_sum(pmf)
                 run(f, n, pmf)
 
 if __name__ == '__main__':

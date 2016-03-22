@@ -16,7 +16,7 @@ def rel(x, y):
     return np.abs(np.expm1(x - y))
 
 def ranges(v):
-    return v.max() - sisfft.utils.log_min_pos(v), sisfft.utils.log_dynamic_range(v)
+    return v.max() - sisfft._utils.log_min_pos(v), sisfft._utils.log_dynamic_range(v)
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-r', '--repeats', type=int, default=DEFAULT_REPEAT,
@@ -45,12 +45,12 @@ def main():
                 count_had_actual_bad = 0
                 for _ in range(args.repeats):
                     v1 = np.random.random(n) * np.log(limit1)
-                    v1 -= sisfft.utils.log_sum(v1)
+                    v1 -= sisfft._utils.log_sum(v1)
                     v2 = np.random.random(n) * np.log(limit2)
-                    v2 -= sisfft.utils.log_sum(v2)
+                    v2 -= sisfft._utils.log_sum(v2)
 
-                    exact = sisfft.naive.convolve_naive(v1, v2)
-                    conv, bad_places = sisfft.psfft.checked_fftc(v1, v2, alpha)
+                    exact = sisfft._naive.convolve_naive(v1, v2)
+                    conv, bad_places = sisfft._afftc.checked_fftc(v1, v2, alpha)
                     this_bad = 0
                     this_actual_bad = 0
                     for i in bad_places:

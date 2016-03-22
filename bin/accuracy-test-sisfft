@@ -57,7 +57,7 @@ def write_header(f):
 print_count = 0
 def write_results(f, L, s0, beta, NC_pvalue, sisFFT_pvalue):
     global print_count
-    abs_diff = sisfft.utils.logsubexp(max(NC_pvalue, sisFFT_pvalue),
+    abs_diff = sisfft._utils.logsubexp(max(NC_pvalue, sisFFT_pvalue),
                                       min(NC_pvalue, sisFFT_pvalue))
     rel_error = abs_diff - NC_pvalue
     failed = rel_error > np.log(beta)
@@ -95,17 +95,17 @@ def run(pmf_expr, date, repeat, n, ells, s0s, betas, out_dir):
                 continue
             else:
                 seen.add(digest)
-            pmf -= sisfft.utils.log_sum(pmf)
+            pmf -= sisfft._utils.log_sum(pmf)
 
             for L in ells:
-                nc_vector = sisfft.naive.power_naive(pmf, L)
+                nc_vector = sisfft._naive.power_naive(pmf, L)
 
                 for s0ratio in s0s:
-                    s0 = int(s0ratio * sisfft.utils.iterated_convolution_lengths(n, L)[0])
-                    nc_pvalue = sisfft.utils.log_sum(nc_vector[s0:])
+                    s0 = int(s0ratio * sisfft._utils.iterated_convolution_lengths(n, L)[0])
+                    nc_pvalue = sisfft._utils.log_sum(nc_vector[s0:])
 
                     for beta in betas:
-                        sisfft_pvalue = sisfft.sisfft.pvalue(pmf, s0, L, beta)
+                        sisfft_pvalue = sisfft.log_pvalue(pmf, s0, L, beta)
                         failed = write_results(f,
                                                L, s0, beta,
                                                nc_pvalue,

@@ -1,7 +1,7 @@
 import numpy as np
 import unittest
 from sisfft.timer import timer
-from sisfft import afftc
+from sisfft import _afftc as afftc
 
 #logging.basicConfig(level = logging.INFO)
 

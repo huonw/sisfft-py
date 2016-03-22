@@ -5,7 +5,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import sisfft
-from sisfft.utils import log_sum
+from sisfft._utils import log_sum
 import numpy
 np = numpy
 import argparse
@@ -70,9 +70,9 @@ def element_plot():
     s = np.arange(128.0)
     log_pmf = s * (10 - s) / 60
     log_pmf -= log_sum(log_pmf)
-    nc = sisfft.naive.convolve_naive(log_pmf, log_pmf)
-    afftc = sisfft.psfft.convolve(log_pmf, log_pmf, 1e3)
-    fftc = sisfft.naive.convolve_fft(log_pmf, log_pmf)
+    nc = sisfft._naive.convolve_naive(log_pmf, log_pmf)
+    afftc = sisfft._afftc.convolve(log_pmf, log_pmf, 1e3)
+    fftc = sisfft._naive.convolve_fft(log_pmf, log_pmf)
 
     N = mp.mpf('0.2143445732831971899099569468624653124133444605716066678388089538586101565444442220530088439083536282')
     N_nc = np.exp(log_sum(2 * nc) / 2)
@@ -297,8 +297,8 @@ def sisfft_plots():
 
 def splits_plot(name, x, log_pmf, alpha, Lnorm=2):
     from matplotlib.patches import Rectangle
-    _, fft_len = sisfft.utils.pairwise_convolution_lengths(len(x), len(x))
-    maximas = sisfft.psfft._split_maxima(log_pmf, fft_len, alpha, -float('inf'),
+    _, fft_len = sisfft._utils.pairwise_convolution_lengths(len(x), len(x))
+    maximas = sisfft._afftc._split_maxima(log_pmf, fft_len, alpha, -float('inf'),
                                              float('inf'))
 
     maximas = np.append(maximas, log_pmf.min())
@@ -355,8 +355,8 @@ def splits_plots():
     s, log_pmf = concave_quadratic_pmf()
     alpha = 1e3
 
-    theta = sisfft.psfft._compute_theta(log_pmf, log_pmf)
-    shifted_log_pmf, log_mgf = sisfft.utils.shift(log_pmf, theta)
+    theta = sisfft._afftc._compute_theta(log_pmf, log_pmf)
+    shifted_log_pmf, log_mgf = sisfft._utils.shift(log_pmf, theta)
 
     splits_plot('splits-unshifted', s, log_pmf, alpha)
     splits_plot('splits-shifted', s, shifted_log_pmf, alpha)
@@ -366,7 +366,7 @@ def print_pvalue(name, v, s0):
     print(name, '%.20f' % p, np.exp(p))
 
 def single_conv_plot(name, var, basic, log_pmf1, log_pmf2, funcs, pvalue = None):
-    nc = sisfft.naive.convolve_naive(log_pmf1, log_pmf2)
+    nc = sisfft._naive.convolve_naive(log_pmf1, log_pmf2)
     x = np.arange(len(nc))
     symlog_plot(x, nc, ':', color='blue')[0].set_label(basic)
 
@@ -391,14 +391,14 @@ def single_conv_plot(name, var, basic, log_pmf1, log_pmf2, funcs, pvalue = None)
     save(name)
 
 def sfft_shift(s0, log_pmf, L):
-    total_len, fft_len = sisfft.utils.iterated_convolution_lengths(len(log_pmf), L)
-    theta0 = sisfft.sisfft._compute_theta(log_pmf, s0, L)
-    shifted_pmf, log_mgf = sisfft.utils.shift(log_pmf, theta0)
+    total_len, fft_len = sisfft._utils.iterated_convolution_lengths(len(log_pmf), L)
+    theta0 = sisfft._sisfft._compute_theta(log_pmf, s0, L)
+    shifted_pmf, log_mgf = sisfft._utils.shift(log_pmf, theta0)
     return theta0, shifted_pmf, log_mgf, total_len, fft_len
 def nc_sfft_shift(s0, log_pmf, L):
     assert L == 2
     theta0, shifted_pmf, log_mgf, total_len, fft_len = sfft_shift(s0, log_pmf, L)
-    return sisfft.naive.convolve_naive(shifted_pmf, shifted_pmf)
+    return sisfft._naive.convolve_naive(shifted_pmf, shifted_pmf)
 
 def sfft_fftc(s0, log_pmf, L):
     theta0, shifted_pmf, log_mgf, total_len, fft_len = sfft_shift(s0, log_pmf, L)
@@ -411,7 +411,7 @@ def sfft_filtered(s0, log_pmf, L):
     return theta0, conv, log_mgf
 def sfft(s0, log_pmf, L):
     theta0, conv, log_mgf = sfft_filtered(s0, log_pmf, L)
-    return sisfft.utils.unshift(conv, theta0, (log_mgf, L))
+    return sisfft._utils.unshift(conv, theta0, (log_mgf, L))
 
 def sfft_plot(name, log_pmf, s0):
     single_conv_plot(name, 's', r'$\boldsymbol{p}^{\ast L}$', log_pmf, log_pmf,
@@ -431,14 +431,14 @@ def nc_sisfft_shift(s0, log_pmf, L, beta):
     return nc_sfft_shift(s0, log_pmf, L)
 def sisfft_unshifted(s0, log_pmf, L, beta):
     theta0, shifted_pmf, log_mgf, total_len, fft_len = sisfft_shift(s0, log_pmf, L, beta)
-    log_bound = sisfft.sisfft._lower_bound(log_pmf, shifted_pmf, theta0, log_mgf,
+    log_bound = sisfft._sisfft._lower_bound(log_pmf, shifted_pmf, theta0, log_mgf,
                                            s0, L, beta)
     bound = np.exp(log_bound)
-    conv = sisfft.sisfft.conv_power(shifted_pmf, L, 2.0 / beta, bound)
+    conv = sisfft._sisfft.conv_power(shifted_pmf, L, 2.0 / beta, bound)
     return theta0, conv, log_mgf
 def sisfft_(s0, log_pmf, L, beta):
     theta0, conv, log_mgf = sisfft_unshifted(s0, log_pmf, L, beta)
-    return sisfft.utils.unshift(conv, theta0, (log_mgf, L))
+    return sisfft._utils.unshift(conv, theta0, (log_mgf, L))
 
 def sisfft_plot(name, log_pmf, s0, beta):
     single_conv_plot(name, 's', r'$\boldsymbol{p}^{\ast L}$', log_pmf, log_pmf,
@@ -457,7 +457,7 @@ def single_conv_plots():
     s0 = 215
     sisfft_plot('sisfft-good', log_pmf, s0, beta)
     single_conv_plot('fftc-bad', 'k', 'Exact', log_pmf, log_pmf,
-                     [('FFT-C', sisfft.naive.convolve_fft, (), {'color': 'red'})],
+                     [('FFT-C', sisfft._naive.convolve_fft, (), {'color': 'red'})],
                      pvalue = s0)
 
     sfft_plot('sfft-good', log_pmf, s0)

@@ -2,7 +2,7 @@
 
 from __future__ import print_function
 import sisfft
-from sisfft.utils import log_sum
+from sisfft._utils import log_sum
 import numpy
 np = numpy
 import argparse
@@ -108,16 +108,16 @@ def run(pmf1_name, pmf1s, pmf2_name, pmf2s, date, n, repeat, betas, out_dir):
                 else:
                     seen2.add(digest)
 
-                nc = sisfft.naive.convolve_naive(pmf1, pmf2)
+                nc = sisfft._naive.convolve_naive(pmf1, pmf2)
                 nc_pvalues = all_pvalues(nc)
 
-                fftc = sisfft.naive.convolve_fft(pmf1, pmf2)
+                fftc = sisfft._naive.convolve_fft(pmf1, pmf2)
                 fftc_pvalues = all_pvalues(fftc)
                 fftc_rel_max = rel(fftc, nc).max()
                 fftc_pvalue_max = rel(fftc_pvalues, nc_pvalues).max()
 
                 for beta in betas:
-                    psfftc = sisfft.psfft.convolve(pmf1, pmf2, 1.0 / beta)
+                    psfftc = sisfft.log_convolve(pmf1, pmf2, 1.0 / beta)
                     psfftc_pvalues = all_pvalues(psfftc)
                     psfftc_rel_max = rel(psfftc, nc).max()
                     psfftc_pvalue_max = rel(psfftc_pvalues, nc_pvalues).max()
