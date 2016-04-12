@@ -52,18 +52,20 @@ def other_quadratic(n):
 
 
 def write_header(f):
-    print('n,L,s0,s0ratio,beta,NC_pvalue,sisFFT_pvalue,NC_time,sisFFT_time,ratio', file = f)
+    print('n,L,s0,s0ratio,beta,NC_pvalue,sisFFT_pvalue,sq_aFFTC_pvalue,NC_time,sisFFT_time,sq_aFFTC_time,ratio', file = f)
     f.flush()
-def write_results(f, n, L, s0, s0ratio, beta, NC_pvalue, NC_time, sisFFT_pvalue, sisFFT_time):
+def write_results(f, n, L, s0, s0ratio, beta, NC_pvalue, NC_time, sisFFT_pvalue, sisFFT_time,
+                  squaring_afftc_pvalue, squaring_afftc_time):
     if not math.isnan(NC_pvalue) and not math.isnan(sisFFT_pvalue):
         ratio = NC_time/sisFFT_time
     else:
         ratio = float('nan')
-    s = '{n:d},{L:d},{s0:d},{s0ratio},{beta},{NC_pvalue:.20g},{sisFFT_pvalue:.20g},'\
-        '{NC_time:.5e},{sisFFT_time:.5e},{ratio:.1f}'.format(
+    s = '{n:d},{L:d},{s0:d},{s0ratio},{beta},{NC_pvalue:.20g},{sisFFT_pvalue:.20g},{sq_pvalue:.20g},'\
+        '{NC_time:.5e},{sisFFT_time:.5e},{sq_time:.5e},{ratio:.1f}'.format(
             n = n, L = L, s0 = s0, s0ratio = s0ratio, beta = beta,
             NC_pvalue = NC_pvalue, NC_time = NC_time,
             sisFFT_pvalue = sisFFT_pvalue, sisFFT_time = sisFFT_time,
+            sq_pvalue = squaring_afftc_pvalue, sq_time = squaring_afftc_time,
             ratio = ratio)
     print(s)
     print(s, file = f)
@@ -98,6 +100,7 @@ def main():
     pmfs = args.pmfs
     nc_time_limit = args.nc_time_limit
     sisfft_time_limit = args.sisfft_time_limit
+    squaring_afftc_time_limit = nc_time_limit
     s0s = args.s0 or [DEFAULT_S0]
     betas = args.beta or [DEFAULT_BETA]
     out_dir = args.out_dir
@@ -112,6 +115,7 @@ def main():
     def run(f, n, pmf):
         nc_done = False
         sisfft_done = False
+        squaring_afftc_done = False
         done = False
         for L in ells:
             nc_start = default_timer()
@@ -119,10 +123,15 @@ def main():
                 nc_vector = sisfft._naive.power_naive(pmf, L)
             nc_power_time = default_timer() - nc_start
 
-            for s0ratio in s0s:
-                s0 = int(s0ratio * sisfft._utils.iterated_convolution_lengths(n, L)[0])
-                for beta in betas:
-                    #print('      s0 = %s, beta = %s' % (s0, beta))
+            for beta in betas:
+                squaring_afftc_start = default_timer()
+                if not squaring_afftc_done:
+                    squaring_afftc_vector = sisfft.log_convolve_power(pmf, L, 1.0/beta, 0)
+                squaring_afftc_power_time = default_timer() - squaring_afftc_start
+
+                for s0ratio in s0s:
+                    s0 = int(s0ratio * sisfft._utils.iterated_convolution_lengths(n, L)[0])
+                      #print('      s0 = %s, beta = %s' % (s0, beta))
                     sisfft_start = default_timer()
                     if sisfft_done:
                         sisfft_pvalue = float('nan')
@@ -138,17 +147,29 @@ def main():
 
                     nc_sum_time = default_timer() - nc_sum_start
                     nc_time = nc_power_time + nc_sum_time
+
+                    squaring_afftc_sum_start = default_timer()
+                    if squaring_afftc_done:
+                        squaring_afftc_pvalue = float('nan')
+                    else:
+                        squaring_afftc_pvalue = sisfft._utils.log_sum(squaring_afftc_vector[s0:])
+                    squaring_afftc_sum_time = default_timer() - squaring_afftc_sum_start
+                    squaring_afftc_time = squaring_afftc_power_time + squaring_afftc_sum_time
+
                     write_results(f,
                                   n,
                                   L, s0, s0ratio, beta,
                                   nc_pvalue, nc_time,
-                                  sisfft_pvalue, sisfft_time)
+                                  sisfft_pvalue, sisfft_time,
+                                  squaring_afftc_pvalue, squaring_afftc_time)
 
                     if not nc_done and nc_time > nc_time_limit:
                         nc_done = True
                     if not sisfft_done and sisfft_time > sisfft_time_limit:
                         sisfft_done = True
-                    if nc_done and sisfft_done:
+                    if not squaring_afftc_done and squaring_afftc_time > squaring_afftc_time_limit:
+                        squaring_afftc_time = True
+                    if nc_done and sisfft_done and squaring_afftc_done:
                         # all done!
                         return
 

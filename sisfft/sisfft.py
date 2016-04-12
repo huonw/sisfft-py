@@ -17,6 +17,8 @@ def conv_power(log_pmf, L, desired_alpha, desired_delta):
         return log_pmf
 
     alpha, delta = _accurate_error_bounds(L, 1.0 / desired_alpha, desired_delta)
+    if desired_delta == 0:
+        delta = None
 
     answer = np.array([0.0])
     pmf_power = log_pmf
