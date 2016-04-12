@@ -5,7 +5,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import sisfft
-from sisfft._utils import log_sum
+log_sum = sisfft._utils.log_sum
 import numpy
 np = numpy
 import argparse
@@ -413,16 +413,24 @@ def sfft(s0, log_pmf, L):
     theta0, conv, log_mgf = sfft_filtered(s0, log_pmf, L)
     return sisfft._utils.unshift(conv, theta0, (log_mgf, L))
 
-def sfft_plot(name, log_pmf, s0):
+def sfft_afftc(log_pmf1, log_pmf2):
+    theta0 = sisfft._afftc._compute_theta(log_pmf1, log_pmf2)
+    conv = sisfft.log_convolve(log_pmf1, log_pmf2, 1e3, 0)
+    shifted, _mgf = sisfft._utils.shift(conv, theta0)
+    return shifted
+
+def sfft_plot(name, log_pmf, s0, include_afftc=False):
     single_conv_plot(name, 's', r'$\boldsymbol{p}^{\ast L}$', log_pmf, log_pmf,
                      [(r'$\boldsymbol{p}_{\theta_0}^{\ast L}$', lambda v, _: nc_sfft_shift(s0, v, 2),
                        (':',), {'color': 'green'}),
                       (r'$\widetilde{\boldsymbol{p}_{\theta_0}^{\ast L}}$ (unfiltered)', lambda v, _: sfft_fftc(s0, v, 2)[1],
-                       (), {'color': 'purple', 'dashes': (5, 2)}),
+                       (), {'color': 'green', 'dashes': (5, 2)}),
                       (r'$\widetilde{\boldsymbol{p}_{\theta_0}^{\ast L}}$', lambda v, _: sfft_filtered(s0, v, 2)[1],
-                       (), {'color': 'purple'}),
+                       (), {'color': 'green'}),
                       (r'$\widetilde{\boldsymbol{p}^{\ast L}}$', lambda v, _: sfft(s0, v, 2),
-                       (), {'color': 'red'})],
+                       (), {'color': 'blue'})]
+                     + ([] if not include_afftc else
+                        [(r'$\boldsymbol{p}_{\theta_0}^{\ast L}$ (aFFT-C)', lambda v, _: sfft_afftc(v, v), (':',), {'color': 'purple'})]),
                      pvalue = s0)
 
 def sisfft_shift(s0, log_pmf, L, beta):
@@ -445,9 +453,9 @@ def sisfft_plot(name, log_pmf, s0, beta):
                      [(r'$\boldsymbol{p}_{\theta_0}^{\ast L}$', lambda v, _: nc_sisfft_shift(s0, v, 2, beta),
                        (':',), {'color': 'green'}),
                       (r'$\widetilde{\boldsymbol{p}_{\theta_0}^{\ast L}}$', lambda v, _: sisfft_unshifted(s0, v, 2, beta)[1],
-                       (), {'color': 'purple'}),
+                       (), {'color': 'green'}),
                       (r'$\widetilde{\boldsymbol{p}^{\ast L}}$', lambda v, _: sisfft_(s0, v, 2, beta),
-                       (), {'color': 'red'})],
+                       (), {'color': 'blue'})],
                      pvalue = s0)
 
 def single_conv_plots():
@@ -456,11 +464,11 @@ def single_conv_plots():
     beta = 0.001
     s0 = 215
     sisfft_plot('sisfft-good', log_pmf, s0, beta)
-    single_conv_plot('fftc-bad', 'k', 'Exact', log_pmf, log_pmf,
+    single_conv_plot('fftc-bad', 's', 'Exact', log_pmf, log_pmf,
                      [('FFT-C', sisfft._naive.convolve_fft, (), {'color': 'red'})],
                      pvalue = s0)
 
-    sfft_plot('sfft-good', log_pmf, s0)
+    sfft_plot('sfft-good', log_pmf, s0, include_afftc=True)
     s, log_pmf2 = convex_quadratic_pmf()
     sisfft_plot('sisfft-good2', log_pmf2, s0, beta)
     sfft_plot('sfft-bad', log_pmf2, s0)
