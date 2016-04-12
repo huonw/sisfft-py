@@ -3,7 +3,7 @@ from numpy.fft import fft, ifft
 from scipy import optimize
 import logging
 import afftc, naive, utils
-from utils import NEG_INF
+from utils import NEG_INF, EPS
 
 OPT_BOUND = 1e10
 THETA_LIMIT = 1e4
@@ -70,8 +70,12 @@ def pvalue(log_pmf, s0, L, desired_beta):
     shifted_pmf, log_mgf = utils.shift(log_pmf, theta)
 
     alpha = 2.0 / desired_beta
-    log_delta = _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta)
-    logging.debug('theta %s, log_mgf %s, alpha %s, log delta %s', theta, log_mgf, alpha, log_delta)
+    sfft_pval, log_delta = _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta)
+    sfft_bound = _log_sfft_error_estimate(log_pmf, log_mgf, theta, s0, L) + np.log(1.0/desired_beta + 1)
+    logging.debug('theta %s, log_mgf %s, alpha %s, log delta %s, sfft pval %s (bound required %s)', theta, log_mgf, alpha, log_delta, sfft_pval, sfft_bound)
+    if sfft_pval > sfft_bound:
+        logging.debug(' sfft worked %.20f', sfft_pval)
+        return sfft_pval
     delta = np.exp(log_delta)
 
     conv = conv_power(shifted_pmf, L, alpha, delta)
@@ -86,7 +90,7 @@ def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
 
     log_f0, fft_len = naive.power_fft(shifted_pmf, L - 1)
     f0 = np.exp(log_f0)
-    error_estimate = utils.error_threshold_factor(fft_len) * (L - 1)
+    error_estimate = utils.sfft_error_threshold_factor(fft_len, L - 1)
 
     f_theta = np.where(f0 > error_estimate,
                        f0 - error_estimate,
@@ -124,7 +128,7 @@ def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
 
     logging.debug('q %s, frac %s, factor %s', q, frac, factor)
     gamma = q + (theta * s0 - L * log_mgf) + frac + np.log(desired_beta / 2)
-    return gamma
+    return q, gamma
 
 
 def _compute_theta(log_pmf, s0, L):
@@ -155,3 +159,8 @@ def _accurate_error_bounds(L, beta, gamma):
                       sum(2 + rbar(k) + r(k + 1) for k in range(1, j)))
     delta = gamma / dbar(len(Ljs))
     return 1.0 / beta2, delta
+
+def _log_sfft_error_estimate(pmf, log_mgf, theta, s0, L):
+    true_len, fft_len = utils.iterated_convolution_lengths(len(pmf), L)
+    smax = true_len - 1
+    return np.log(utils.sfft_error_threshold_factor(fft_len, L) * (smax - s0)) + (-theta * s0 + L * log_mgf)

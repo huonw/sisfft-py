@@ -67,7 +67,12 @@ def error_threshold_factor(conv_len):
     else:
         c = 16
     return EPS * c * np.log2(conv_len)
-
+def sfft_error_threshold_factor(conv_len, L):
+    if conv_len >= 2**6 and L >= 10:
+        c = 5
+    else:
+        c = 7
+    return EPS * c * np.log2(conv_len) * L
 
 def _next_power_of_two(n):
     return 2 ** int(np.ceil(np.log2(n)))
