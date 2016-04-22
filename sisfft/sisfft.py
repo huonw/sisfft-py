@@ -70,10 +70,14 @@ def pvalue(log_pmf, s0, L, desired_beta):
     shifted_pmf, log_mgf = utils.shift(log_pmf, theta)
 
     alpha = 2.0 / desired_beta
-    sfft_pval, log_delta = _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta)
-    sfft_bound = _log_sfft_error_estimate(log_pmf, log_mgf, theta, s0, L) + np.log(1.0/desired_beta + 1)
-    logging.debug('theta %s, log_mgf %s, alpha %s, log delta %s, sfft pval %s (bound required %s)', theta, log_mgf, alpha, log_delta, sfft_pval, sfft_bound)
-    if sfft_pval > sfft_bound:
+    log_delta, p_lower, p_upper = _bounds(log_pmf, shifted_pmf, theta, log_mgf,
+                                          s0, L, desired_beta)
+
+    sfft_pval = np.log(2) + p_lower + p_upper - np.logaddexp(p_upper, p_lower)
+    sfft_accuracy = utils.logsubexp(p_upper, p_lower) - np.logaddexp(p_upper, p_lower)
+
+    logging.debug('theta %s, log_mgf %s, alpha %s, log delta %s, sfft pval %s (range %s -- %s, accuracy %s, needed %s)', theta, log_mgf, alpha, log_delta, sfft_pval, p_lower, p_upper, sfft_accuracy, np.log(desired_beta))
+    if sfft_accuracy < np.log(desired_beta):
         logging.debug(' sfft worked %.20f', sfft_pval)
         return sfft_pval
     delta = np.exp(log_delta)
@@ -84,7 +88,7 @@ def pvalue(log_pmf, s0, L, desired_beta):
     logging.debug(' sis pvalue %.20f', pval)
     return pval
 
-def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
+def _bounds(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
     # things aren't happy if this is (too) negative
     assert theta >= -1.0
 
@@ -92,10 +96,8 @@ def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
     f0 = np.exp(log_f0)
     error_estimate = utils.sfft_error_threshold_factor(fft_len, L - 1)
 
-    f_theta = np.where(f0 > error_estimate,
-                       f0 - error_estimate,
-                       0.0)
-    f_theta = np.log(f_theta)
+    v_lower = np.log(np.maximum(f0 - error_estimate, 0.0))
+    v_upper = np.log(f0 + error_estimate)
 
     tail_sums = np.zeros_like(log_pmf)
     tail_sums[-1] = log_pmf[-1]
@@ -104,14 +106,20 @@ def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
     for i in range(1, Q):
         tail_sums[-1 - i] = np.logaddexp(log_pmf[-1 - i], tail_sums[-i])
 
-    limit = len(f_theta)
-    low = max(s0 - Q1, 0)
-    k1 = np.arange(low, min(s0, limit))
-    q1 = utils.log_sum(f_theta[k1] + (-k1 * theta + (L - 1) * log_mgf) + tail_sums[s0 - k1])
+    def pval_estimate(v):
+        limit = len(v)
+        low = max(s0 - Q1, 0)
+        v += -np.arange(limit) * theta + (L - 1) * log_mgf
+        k1 = np.arange(low, min(s0, limit))
+        q1 = utils.log_sum(v[k1] + tail_sums[s0 - k1])
 
-    k2 = np.arange(min(s0, limit), limit)
-    q2 = utils.log_sum(f_theta[k2] + (-k2 * theta + (L - 1) * log_mgf))
-    q = np.logaddexp(q1, q2)
+        k2 = np.arange(min(s0, limit), limit)
+        q2 = utils.log_sum(v[k2])
+        q = np.logaddexp(q1, q2)
+        return q
+
+    p_lower = pval_estimate(v_lower)
+    p_upper = pval_estimate(v_upper)
 
     factor = L * Q1 - s0 + 1
     # TODO: this has numerical stability issues:
@@ -126,9 +134,9 @@ def _lower_bound(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
         # subtraction works
         frac = utils.logsubexp(-theta, 0.0) - utils.logsubexp(-factor * theta, 0.0)
 
-    logging.debug('q %s, frac %s, factor %s', q, frac, factor)
-    gamma = q + (theta * s0 - L * log_mgf) + frac + np.log(desired_beta / 2)
-    return q, gamma
+    logging.debug('lower %s, upper %s, frac %s, factor %s', p_lower, p_upper, frac, factor)
+    log_delta = p_lower + (theta * s0 - L * log_mgf) + frac + np.log(desired_beta / 2)
+    return log_delta, p_lower, p_upper
 
 
 def _compute_theta(log_pmf, s0, L):
