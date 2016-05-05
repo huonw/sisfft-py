@@ -55,18 +55,10 @@ def pvalue(log_pmf, s0, L, desired_beta):
 
     theta = _compute_theta(log_pmf, s0, L)
     logging.debug('raw theta %s', theta)
-    # theoretically this could/should be < 0.0, but that leads to
-    # infinite recursion (there are vectors for which theta is
-    # computed to be negative for both configurations)
-    if theta < -1:
-        logging.debug('    computing right tail')
-        # turn things around! Compute 1 - sum(left tail) instead of sum(right tail).
-        p = pvalue(log_pmf[::-1], total_len - s0, L, desired_beta)
-        return utils.log1subexp(p)
 
-    # TODO: too-large theta causes numerical instability, so this is a
-    # huge hack
-    theta = utils.clamp(theta, -THETA_LIMIT, THETA_LIMIT)
+    # TODO: too-large or negative theta causes numerical instability,
+    # so this is a huge hack
+    theta = utils.clamp(theta, 0, THETA_LIMIT)
     shifted_pmf, log_mgf = utils.shift(log_pmf, theta)
 
     alpha = 2.0 / desired_beta
