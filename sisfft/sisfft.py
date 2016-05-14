@@ -91,12 +91,9 @@ def _bounds(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
     v_lower = np.log(np.maximum(f0 - error_estimate, 0.0))
     v_upper = np.log(f0 + error_estimate)
 
-    tail_sums = np.zeros_like(log_pmf)
-    tail_sums[-1] = log_pmf[-1]
+    tail_sums = np.logaddexp.accumulate(log_pmf[::-1])[::-1]
     Q = len(log_pmf)
     Q1 = Q - 1
-    for i in range(1, Q):
-        tail_sums[-1 - i] = np.logaddexp(log_pmf[-1 - i], tail_sums[-i])
 
     def pval_estimate(v):
         limit = len(v)
