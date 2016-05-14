@@ -55,6 +55,9 @@ def power_naive(log_v, L):
     return answer
 
 def power_fft(log_u, L):
+    if L == 1:
+        return log_u, 1
+
     true_len, fft_len = utils.iterated_convolution_lengths(len(log_u), L)
     fft_ = fft.fft(np.exp(log_u), n = fft_len)
     conv = fft.ifft(fft_**L)[:true_len]

@@ -4,6 +4,7 @@ from scipy import optimize
 import logging
 import afftc, naive, utils
 from utils import NEG_INF, EPS
+from timer import timer
 
 OPT_BOUND = 1e10
 THETA_LIMIT = 1e4
@@ -53,7 +54,18 @@ def pvalue(log_pmf, s0, L, desired_beta):
     if s0 >= total_len:
         return NEG_INF
 
-    theta = _compute_theta(log_pmf, s0, L)
+    with timer('pre-shifting bounds'):
+        _, p_lower_preshift, p_upper_preshift = _bounds(log_pmf, log_pmf, 0, 0.0,
+                                      s0, L, desired_beta)
+    sfft_good_preshift, sfft_pval_preshift = _check_sfft_pvalue(p_lower_preshift,
+                                                                p_upper_preshift,
+                                                                desired_beta)
+    if sfft_good_preshift:
+        logging.debug(' pre-shift sfft worked %.20f', sfft_pval_preshift)
+        return sfft_pval_preshift
+
+    with timer('computing theta'):
+        theta = _compute_theta(log_pmf, s0, L)
     logging.debug('raw theta %s', theta)
 
     # TODO: too-large or negative theta causes numerical instability,
@@ -62,14 +74,14 @@ def pvalue(log_pmf, s0, L, desired_beta):
     shifted_pmf, log_mgf = utils.shift(log_pmf, theta)
 
     alpha = 2.0 / desired_beta
-    log_delta, p_lower, p_upper = _bounds(log_pmf, shifted_pmf, theta, log_mgf,
-                                          s0, L, desired_beta)
+    with timer('bounds'):
+        log_delta, p_lower, p_upper = _bounds(log_pmf, shifted_pmf, theta, log_mgf,
+                                              s0, L, desired_beta)
 
-    sfft_pval = np.log(2) + p_lower + p_upper - np.logaddexp(p_upper, p_lower)
-    sfft_accuracy = utils.logsubexp(p_upper, p_lower) - np.logaddexp(p_upper, p_lower)
+    sfft_good, sfft_pval = _check_sfft_pvalue(p_lower, p_upper, desired_beta)
 
-    logging.debug('theta %s, log_mgf %s, alpha %s, log delta %s, sfft pval %s (range %s -- %s, accuracy %s, needed %s)', theta, log_mgf, alpha, log_delta, sfft_pval, p_lower, p_upper, sfft_accuracy, np.log(desired_beta))
-    if sfft_accuracy < np.log(desired_beta):
+    logging.debug('theta %s, log_mgf %s, alpha %s, log delta %s', theta, log_mgf, alpha, log_delta)
+    if sfft_good:
         logging.debug(' sfft worked %.20f', sfft_pval)
         return sfft_pval
     delta = np.exp(log_delta)
@@ -79,6 +91,13 @@ def pvalue(log_pmf, s0, L, desired_beta):
     pval = utils.log_sum(utils.unshift(conv, theta, (log_mgf, L))[s0:])
     logging.debug(' sis pvalue %.20f', pval)
     return pval
+
+def _check_sfft_pvalue(p_lower, p_upper, desired_beta):
+    sfft_pval = np.log(2) + p_lower + p_upper - np.logaddexp(p_upper, p_lower)
+    sfft_accuracy = utils.logsubexp(p_upper, p_lower) - np.logaddexp(p_upper, p_lower)
+    logging.debug('sfft pval %s (range %s -- %s, accuracy %s, needed %s)',
+                  sfft_pval, p_lower, p_upper, sfft_accuracy, np.log(desired_beta))
+    return sfft_accuracy < np.log(desired_beta), sfft_pval
 
 def _bounds(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
     # things aren't happy if this is (too) negative
