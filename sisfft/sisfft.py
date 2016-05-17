@@ -117,12 +117,15 @@ def _bounds(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
     def pval_estimate(v):
         limit = len(v)
         low = max(s0 - Q1, 0)
-        v += -np.arange(limit) * theta + (L - 1) * log_mgf
-        k1 = np.arange(low, min(s0, limit))
-        q1 = utils.log_sum(v[k1] + tail_sums[s0 - k1])
+        mid = min(s0, limit)
 
-        k2 = np.arange(min(s0, limit), limit)
-        q2 = utils.log_sum(v[k2])
+        if theta != 0:
+            v += -np.arange(limit) * theta
+        if log_mgf != 0:
+            v += (L - 1) * log_mgf
+
+        q1 = utils.log_sum(v[low:mid] + tail_sums[s0 - low:s0 - mid:-1])
+        q2 = utils.log_sum(v[mid:limit])
         q = np.logaddexp(q1, q2)
         return q
 
