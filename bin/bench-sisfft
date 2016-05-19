@@ -44,6 +44,8 @@ def uniform(n):
     return np.ones(n)
 def slight_tilt(n):
     return np.linspace(0, 1, n)[::-1]
+def tilt(n):
+    return np.linspace(0, 30, n)[::-1]
 
 
 def q_xs(n):
@@ -62,22 +64,24 @@ def sfft_bad_quadratic(n):
     return s * (s - 256.0) / 60.0
 
 def write_header(f):
-    print('n,L,s0,s0ratio,beta,NC_pvalue,sisFFT_pvalue,sq_aFFTC_pvalue,FFTC_pvalue,NC_time,sisFFT_time,sq_aFFTC_time,FFTC_time,ratio', file = f)
+    print('n,L,s0,s0ratio,beta,NC_pvalue,sisFFT_pvalue,sq_aFFTC_pvalue,FFTC_pvalue,sFFT_pvalue,NC_time,sisFFT_time,sq_aFFTC_time,FFTC_time,sFFT_time,ratio', file = f)
     f.flush()
 def write_results(f, n, L, s0, s0ratio, beta, NC_pvalue, NC_time, sisFFT_pvalue, sisFFT_time,
                   squaring_afftc_pvalue, squaring_afftc_time,
-                  fftc_pvalue, fftc_time):
+                  fftc_pvalue, fftc_time,
+                  sfft_pvalue, sfft_time):
     if not math.isnan(NC_pvalue) and not math.isnan(sisFFT_pvalue):
         ratio = NC_time/sisFFT_time
     else:
         ratio = float('nan')
-    s = '{n:d},{L:d},{s0:d},{s0ratio},{beta},{NC_pvalue:.20g},{sisFFT_pvalue:.20g},{sq_pvalue:.20g},{fftc_pvalue:.20g},'\
-        '{NC_time:.5e},{sisFFT_time:.5e},{sq_time:.5e},{fftc_time:.5e},{ratio:.1f}'.format(
+    s = '{n:d},{L:d},{s0:d},{s0ratio},{beta},{NC_pvalue:.20g},{sisFFT_pvalue:.20g},{sq_pvalue:.20g},{fftc_pvalue:.20g},{sfft_pvalue:.20g},'\
+        '{NC_time:.5e},{sisFFT_time:.5e},{sq_time:.5e},{fftc_time:.5e},{sfft_time:.5e},{ratio:.1f}'.format(
             n = n, L = L, s0 = s0, s0ratio = s0ratio, beta = beta,
             NC_pvalue = NC_pvalue, NC_time = NC_time,
             sisFFT_pvalue = sisFFT_pvalue, sisFFT_time = sisFFT_time,
             sq_pvalue = squaring_afftc_pvalue, sq_time = squaring_afftc_time,
             fftc_pvalue = fftc_pvalue, fftc_time = fftc_time,
+            sfft_pvalue = sfft_pvalue, sfft_time = sfft_time,
             ratio = ratio)
     print(s)
     print(s, file = f)
@@ -170,6 +174,10 @@ def main():
                     fftc_sum_time = default_timer() - fftc_sum_start
                     fftc_time = fftc_power_time + fftc_sum_time
 
+                    sfft_start = default_timer()
+                    sfft_pvalue = sisfft._sfft.sfft_pvalue(pmf, s0, L)
+                    sfft_time = default_timer() - sfft_start
+
                     squaring_afftc_sum_start = default_timer()
                     if squaring_afftc_done:
                         squaring_afftc_pvalue = float('nan')
@@ -184,7 +192,8 @@ def main():
                                   nc_pvalue, nc_time,
                                   sisfft_pvalue, sisfft_time,
                                   squaring_afftc_pvalue, squaring_afftc_time,
-                                  fftc_pvalue, fftc_time)
+                                  fftc_pvalue, fftc_time,
+                                  sfft_pvalue, sfft_time)
 
                     if not nc_done and nc_time > nc_time_limit:
                         nc_done = True

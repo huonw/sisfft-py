@@ -54,9 +54,8 @@ def pvalue(log_pmf, s0, L, desired_beta):
     if s0 >= total_len:
         return NEG_INF
 
-    with timer('pre-shifting bounds'):
-        _, p_lower_preshift, p_upper_preshift = _bounds(log_pmf, log_pmf, 0, 0.0,
-                                      s0, L, desired_beta)
+    _, p_lower_preshift, p_upper_preshift = _bounds(log_pmf, log_pmf, 0, 0.0,
+                                                    s0, L, desired_beta)
     sfft_good_preshift, sfft_pval_preshift = _check_sfft_pvalue(p_lower_preshift,
                                                                 p_upper_preshift,
                                                                 desired_beta)
@@ -103,12 +102,14 @@ def _bounds(log_pmf, shifted_pmf, theta, log_mgf, s0, L, desired_beta):
     # things aren't happy if this is (too) negative
     assert theta >= -1.0
 
-    log_f0, fft_len = naive.power_fft(shifted_pmf, L - 1)
-    f0 = np.exp(log_f0)
-    error_estimate = utils.sfft_error_threshold_factor(fft_len, L - 1)
-
-    v_lower = np.log(np.maximum(f0 - error_estimate, 0.0))
-    v_upper = np.log(f0 + error_estimate)
+    if L != 2:
+        log_f0, fft_len = naive.power_fft(shifted_pmf, L - 1)
+        f0 = np.exp(log_f0)
+        error_estimate = utils.sfft_error_threshold_factor(fft_len, L - 1)
+        v_lower = np.log(np.maximum(f0 - error_estimate, 0.0))
+        v_upper = np.log(f0 + error_estimate)
+    else:
+        v_lower = v_upper = shifted_pmf
 
     tail_sums = np.logaddexp.accumulate(log_pmf[::-1])[::-1]
     Q = len(log_pmf)
