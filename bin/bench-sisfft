@@ -147,7 +147,7 @@ def main():
             for beta in betas:
                 squaring_afftc_start = default_timer()
                 if not squaring_afftc_done:
-                    squaring_afftc_vector = sisfft.log_convolve_power(pmf, L, 1.0/beta, 0)
+                    squaring_afftc_vector = sisfft.log_convolve_power(pmf, L, beta, 0)
                 squaring_afftc_power_time = default_timer() - squaring_afftc_start
 
                 for s0ratio in s0s:

@@ -19,45 +19,49 @@ OPT_BOUND = 1e4
 ESTIMATE_ONE_SPLIT = 1
 ESTIMATE_TWO_SPLITS = 2
 
-def convolve(log_pmf1, log_pmf2, alpha, delta = None,
+# we use beta because it is the more natural parameter, but it does
+# differ to the paper, and to the rest of the code (we didn't want to
+# unnecessarily risk bugs by changing it)
+def convolve(log_pmf1, log_pmf2, beta, delta = None,
              enable_fast_path = True):
     """Compute $log(exp(log_pmf1) * exp(log_pmf2))$, by trimming then
        convolving (if delta is not None)."""
     # assert len(log_pmf1) == len(log_pmf2)
     if delta is not None:
-        return _afftc_noshift(log_pmf1, log_pmf2, alpha, delta,
+        return _afftc_noshift(log_pmf1, log_pmf2, 1/beta, delta,
                               pairwise = True,
                               square_1 = False,
                               enable_fast_path = enable_fast_path)[0]
     else:
-        return _convolve_no_lower_bound(log_pmf1, log_pmf2, alpha,
+        return _convolve_no_lower_bound(log_pmf1, log_pmf2, beta,
                                         enable_fast_path = enable_fast_path)
 
-def convolve_square(log_pmf, alpha, delta = None):
+def convolve_square(log_pmf, beta, delta = None):
     if delta is None:
-        return convolve(log_pmf, log_pmf, alpha, delta)
+        return convolve(log_pmf, log_pmf, beta, delta)
     else:
-        return _afftc_noshift(log_pmf, np.array([]), alpha, delta,
+        return _afftc_noshift(log_pmf, np.array([]), beta, delta,
                               pairwise = False,
                               square_1 = True,
                               enable_fast_path = True)[1]
 
 # computes `log_pmf1 * log_pmf2, log_pmf1 * log_pmf1`
-def convolve_and_square(log_pmf1, log_pmf2, alpha, delta = None):
+def convolve_and_square(log_pmf1, log_pmf2, beta, delta = None):
     if delta is None:
         # not sure if this is the best approach in general, probably
         # better to have some heuristics about choosing to shift
         # together vs. individually or something
-        co = convolve(log_pmf1, log_pmf2, alpha, None)
-        sq = convolve_square(log_pmf1, alpha, None)
+        co = convolve(log_pmf1, log_pmf2, beta, None)
+        sq = convolve_square(log_pmf1, beta, None)
         return co, sq
     else:
-        return _afftc_noshift(log_pmf1, log_pmf2, alpha, delta,
+        return _afftc_noshift(log_pmf1, log_pmf2, beta, delta,
                               pairwise = True, square_1 = True,
                               enable_fast_path = True)
 
-def _convolve_no_lower_bound(log_pmf1, log_pmf2, alpha,
+def _convolve_no_lower_bound(log_pmf1, log_pmf2, beta,
                              enable_fast_path):
+    alpha = 1.0 / beta
     if enable_fast_path:
         true_conv_len, fft_conv_len = utils.pairwise_convolution_lengths(len(log_pmf1),
                                                                          len(log_pmf2))
@@ -80,7 +84,7 @@ def _convolve_no_lower_bound(log_pmf1, log_pmf2, alpha,
     theta = _compute_theta(log_pmf1, log_pmf2)
     s1, log_mgf1 = utils.shift(log_pmf1, theta)
     s2, log_mgf2 = utils.shift(log_pmf2, theta)
-    convolved = _afftc_noshift(s1, s2, alpha, NEG_INF,
+    convolved = _afftc_noshift(s1, s2, beta, NEG_INF,
                                pairwise = True,
                                square_1 = False,
                                enable_fast_path = enable_fast_path)[0]
@@ -96,7 +100,7 @@ def checked_fftc(log_pmf1, log_pmf2, alpha):
                             alpha, NEG_INF)
 
 
-def _afftc_noshift(log_pmf1, log_pmf2, alpha, delta,
+def _afftc_noshift(log_pmf1, log_pmf2, beta, delta,
                    pairwise, square_1,
                    enable_fast_path):
     """This function does some sort of pairwise convolution with its arguments, it has three modes:
@@ -117,6 +121,7 @@ def _afftc_noshift(log_pmf1, log_pmf2, alpha, delta,
     """
     # we should do *something*
     assert pairwise or square_1
+    alpha = 1.0 / beta
 
     true_conv_len, fft_conv_len = utils.pairwise_convolution_lengths(len(log_pmf1), len(log_pmf2))
     true_conv_len_sq, fft_conv_len_sq = utils.pairwise_convolution_lengths(len(log_pmf1),

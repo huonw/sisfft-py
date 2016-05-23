@@ -29,7 +29,7 @@ def power_naive(v, L):
 def log_power_naive(v, L):
     return naive.power_naive(v, L)
 
-def conv_power_(self, alpha, delta, L):
+def conv_power_(self, beta, delta, L):
     np.random.seed(1)
     for _ in range(0, TEST_REPEATS):
         v = np.random.rand(TEST_LENGTH)
@@ -38,10 +38,10 @@ def conv_power_(self, alpha, delta, L):
         with timer('naive'):
             real = power_naive(v, L)
         with timer('sisfft'):
-            hopeful = np.exp(sisfft.conv_power(np.log(v), L, alpha, delta))
+            hopeful = np.exp(sisfft.conv_power(np.log(v), L, beta, delta))
 
-        lower = (1 - 1.0 / alpha) * real - delta
-        upper = (1 + 1.0 / alpha) * real
+        lower = (1 - beta) * real - delta
+        upper = (1 + beta) * real
         between = (lower <= hopeful) & (hopeful <= upper)
         not_between = np.invert(between)
         self.assertTrue(between.all(),
@@ -72,23 +72,22 @@ class ConvPower(unittest.TestCase):
 class Sisfft(unittest.TestCase):
     pass
 
-for log10_alpha in range(1, 9 + 1):
-    alpha = 10.0**log10_alpha
+for log10_alpha in range(1, 9 + 1, 2):
+    beta = 10.0**-log10_alpha
     for logL in range(1, 8 + 1, 1):
         for L in [2**logL, 2**logL - 1, 2**logL + 1]:
             # for L in range(2, 59, 7):
             for delta in [0.0001, 0.01, 0.1]:
-                test = lambda self, alpha=alpha, delta=delta, L=L: conv_power_(self, alpha, delta, L)
+                test = lambda self, beta=beta, delta=delta, L=L: conv_power_(self, beta, delta, L)
 
-                name = 'test_conv_power_%s_%f_%s' % (alpha, delta, L)
+                name = 'test_conv_power_%s_%f_%s' % (beta, delta, L)
 
                 test.__name__ = name
-                setattr(ConvPower, name, test)
+                #setattr(ConvPower, name, test)
                 del test
 
             for s0_ratio in [0.01, 0.5, 0.9, 0.99]:
                 s0 = int(s0_ratio * utils.iterated_convolution_lengths(TEST_LENGTH, L)[0])
-                beta = 1/alpha
 
                 test = lambda self, beta = beta, s0=s0, L=L: sisfft_(self, beta, s0, L)
                 name = 'test_%.9f_%04d_%04d' % (beta, L, s0)

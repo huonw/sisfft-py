@@ -9,15 +9,15 @@ from timer import timer
 OPT_BOUND = 1e10
 THETA_LIMIT = 1e4
 
-def conv_power(log_pmf, L, desired_alpha, desired_delta):
+def conv_power(log_pmf, L, desired_beta, desired_delta):
     """Compute $log(exp(log_pmf)**L)$ with overall accuracy parameters
-       $desired_alpha$ and $desired_delta$."""
+       $desired_beta$ and $desired_delta$."""
     if L == 0:
         return np.array([0.0])
     elif L == 1:
         return log_pmf
 
-    alpha, delta = _accurate_error_bounds(L, 1.0 / desired_alpha, desired_delta)
+    beta, delta = _accurate_error_bounds(L, 1.0 / desired_beta, desired_delta)
     if desired_delta == 0:
         delta = None
 
@@ -34,15 +34,15 @@ def conv_power(log_pmf, L, desired_alpha, desired_delta):
                 answer = pmf_power
             else:
                 if need_to_square:
-                    answer, pmf_power = afftc.convolve_and_square(pmf_power, answer, alpha, delta)
+                    answer, pmf_power = afftc.convolve_and_square(pmf_power, answer, beta, delta)
                     squared = True
                 else:
-                    answer = afftc.convolve(pmf_power, answer, alpha, delta)
+                    answer = afftc.convolve(pmf_power, answer, beta, delta)
 
         if not need_to_square:
             break
         if not squared:
-            pmf_power = afftc.convolve_square(pmf_power, alpha, delta)
+            pmf_power = afftc.convolve_square(pmf_power, beta, delta)
 
 
     return answer
@@ -72,20 +72,20 @@ def pvalue(log_pmf, s0, L, desired_beta):
     theta = utils.clamp(theta, 0, THETA_LIMIT)
     shifted_pmf, log_mgf = utils.shift(log_pmf, theta)
 
-    alpha = 2.0 / desired_beta
+    beta = desired_beta / 2.0
     with timer('bounds'):
         log_delta, p_lower, p_upper = _bounds(log_pmf, shifted_pmf, theta, log_mgf,
                                               s0, L, desired_beta)
 
     sfft_good, sfft_pval = _check_sfft_pvalue(p_lower, p_upper, desired_beta)
 
-    logging.debug('theta %s, log_mgf %s, alpha %s, log delta %s', theta, log_mgf, alpha, log_delta)
+    logging.debug('theta %s, log_mgf %s, beta %s, log delta %s', theta, log_mgf, beta, log_delta)
     if sfft_good:
         logging.debug(' sfft worked %.20f', sfft_pval)
         return sfft_pval
     delta = np.exp(log_delta)
 
-    conv = conv_power(shifted_pmf, L, alpha, delta)
+    conv = conv_power(shifted_pmf, L, beta, delta)
 
     pval = utils.log_sum(utils.unshift(conv, theta, (log_mgf, L))[s0:])
     logging.debug(' sis pvalue %.20f', pval)
@@ -178,7 +178,7 @@ def _accurate_error_bounds(L, beta, gamma):
     dbar = lambda j: (sum(d(ij(k)) for k in range(1, j + 1)) +
                       sum(2 + rbar(k) + r(k + 1) for k in range(1, j)))
     delta = gamma / dbar(len(Ljs))
-    return 1.0 / beta2, delta
+    return beta2, delta
 
 def _log_sfft_error_estimate(pmf, log_mgf, theta, s0, L):
     true_len, fft_len = utils.iterated_convolution_lengths(len(pmf), L)

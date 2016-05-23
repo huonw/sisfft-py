@@ -18,7 +18,7 @@ print repr(numpy.exp(sisfft.log_pvalue(log_pmf, s0, L, error_limit)))
 # => 0.044086067199999975
 
 # now compute the full 10-fold convolution (delta limit of zero means no truncation)
-log_full_conv = sisfft.log_convolve_power(log_pmf, L, 1.0/error_limit, 0.0)
+log_full_conv = sisfft.log_convolve_power(log_pmf, L, error_limit, 0.0)
 
 # use this to compute the pvalue
 pvalue = sum(numpy.exp(log_full_conv)[s0:])
@@ -38,13 +38,13 @@ pmf2 = [0.25, 0.25, 0.25, 0.25]
 log_pmf1 = numpy.log(pmf1)
 log_pmf2 = numpy.log(pmf2)
 
-alpha = 1e3 # accuracy parameter
+beta = 1e-3 # accuracy parameter
 
 # Compute pmf1 * pmf2 in two ways:
 # first, with numpy's built in convolve
 direct = numpy.convolve(pmf1, pmf2)
 # and then with aFFT-C
-via_afftc = sisfft.log_convolve(log_pmf1, log_pmf2, alpha)
+via_afftc = sisfft.log_convolve(log_pmf1, log_pmf2, beta)
 
 print direct
 # => array([ 0.025,  0.1  ,  0.15 ,  0.25 ,  0.225,  0.15 ,  0.1  ])

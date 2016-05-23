@@ -71,7 +71,7 @@ def element_plot():
     log_pmf = s * (10 - s) / 60
     log_pmf -= log_sum(log_pmf)
     nc = sisfft._naive.convolve_naive(log_pmf, log_pmf)
-    afftc = sisfft._afftc.convolve(log_pmf, log_pmf, 1e3)
+    afftc = sisfft._afftc.convolve(log_pmf, log_pmf, 1e-3)
     fftc = sisfft._naive.convolve_fft(log_pmf, log_pmf)
 
     N = mp.mpf('0.2143445732831971899099569468624653124133444605716066678388089538586101565444442220530088439083536282')
@@ -415,7 +415,7 @@ def sfft(s0, log_pmf, L):
 
 def sfft_afftc(log_pmf1, log_pmf2):
     theta0 = sisfft._afftc._compute_theta(log_pmf1, log_pmf2)
-    conv = sisfft.log_convolve(log_pmf1, log_pmf2, 1e3, 0)
+    conv = sisfft.log_convolve(log_pmf1, log_pmf2, 1e-3, 0)
     shifted, _mgf = sisfft._utils.shift(conv, theta0)
     return shifted
 

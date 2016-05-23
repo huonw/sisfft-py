@@ -117,7 +117,7 @@ def run(pmf1_name, pmf1s, pmf2_name, pmf2s, date, n, repeat, betas, out_dir):
                 fftc_pvalue_max = rel(fftc_pvalues, nc_pvalues).max()
 
                 for beta in betas:
-                    psfftc = sisfft.log_convolve(pmf1, pmf2, 1.0 / beta)
+                    psfftc = sisfft.log_convolve(pmf1, pmf2, beta)
                     psfftc_pvalues = all_pvalues(psfftc)
                     psfftc_rel_max = rel(psfftc, nc).max()
                     psfftc_pvalue_max = rel(psfftc_pvalues, nc_pvalues).max()
