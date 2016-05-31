@@ -1,0 +1,194 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+import sisfft
+import numpy
+np = numpy
+import argparse
+import logging
+import hashlib
+import multiprocessing
+from os import path
+from datetime import datetime
+
+np.random.seed(1)
+rand = np.random.random
+
+DEFAULT_S0 = 0.95
+DEFAULT_LS = '(2**x for x in range(1, 6 + 1))'
+DEFAULT_LENGTHS = '[100]'
+DEFAULT_BETA = 0.001
+DEFAULT_REPEAT = 10
+DEFAULT_PROCESSES = min(multiprocessing.cpu_count() / 2, 8)
+
+def constant(length):
+    return np.ones(length)
+
+def uniform(length):
+    return -40 * rand(length)
+
+def quadratic(length):
+    x = np.linspace(0, 1.0, length)
+    x2 = x * x
+    return -(30 * rand() + 30) * x2 + 40 * (rand() - 0.5) * x + 40 * (rand() - 0.5)
+
+def sinusoid(length):
+    x = np.linspace(0, 3 * np.pi, length)
+    return 10 * (1 + 3*rand()) * np.sin(x + rand() * 0.1) - 10 * (-1 + 5*rand()) * x
+
+def multi_scales(length):
+    v = np.append(-30 * rand(length / 5), -100 - 100 * rand(length - length / 5))
+    np.random.shuffle(v)
+    return v
+
+def multier_scales(length):
+    v = np.append(-15 * (1 + 2*rand()) * rand(length / 3),
+                  -50 * (1 + 2 * rand()) -50 * (1 + 2 * rand()) * rand(length - length / 3))
+    np.random.shuffle(v)
+    return v
+
+def shaped_multi_scales(length):
+    return multier_scales(length) + quadratic(length)
+
+def write_header(f):
+    print('L,s0,beta,NC_pvalue,sFFT_accuracy,sFFT_pvalue,rel_error,failed', file = f)
+    f.flush()
+
+print_count = 0
+def write_results(f, L, s0, beta, NC_pvalue, sFFT_accuracy, sFFT_pvalue):
+    global print_count
+    abs_diff = sisfft._utils.logsubexp(max(NC_pvalue, sFFT_pvalue),
+                                      min(NC_pvalue, sFFT_pvalue))
+    rel_error = abs_diff - NC_pvalue
+    failed = rel_error > np.log(beta) and sFFT_accuracy > np.log(beta)
+    s = '{L},{s0},{beta},{NC_pvalue:.10g},{sFFT_accuracy},{sFFT_pvalue:.10g},{rel_error},{failed}'.format(
+        L = L, s0 = s0, beta = beta,
+        NC_pvalue = NC_pvalue, sFFT_accuracy = sFFT_accuracy, sFFT_pvalue = sFFT_pvalue,
+        rel_error = rel_error,
+        failed = 1 if failed else 0
+    )
+    print(s, file=f)
+    print_count += 1
+    if print_count % 100 == 0:
+        f.flush()
+    print(s)
+    return failed
+
+def run(pmf_expr, date, repeat, n, ells, s0s, betas, out_dir):
+    np.random.seed(1)
+    seen = set()
+
+    pmf_func = eval(pmf_expr)
+
+    fname = 'sfft-accuracy-{date}-pmf-{name}-length-{n}'.format(date = date,
+                                                                name = pmf_expr,
+                                                                n = n)
+    failures = 0
+    with open(path.join(out_dir, fname + '.csv'), 'w') as f:
+        write_header(f)
+        for _ in range(0, repeat):
+            pmf = pmf_func(n)
+            h = hashlib.sha256()
+            h.update(pmf.data)
+            digest = h.hexdigest()
+            if digest in seen:
+                continue
+            else:
+                seen.add(digest)
+            pmf -= sisfft._utils.log_sum(pmf)
+
+            for L in ells:
+                nc_vector = sisfft._naive.power_naive(pmf, L)
+
+                for s0ratio in s0s:
+                    s0 = int(s0ratio * sisfft._utils.iterated_convolution_lengths(n, L)[0])
+                    nc_pvalue = sisfft._utils.log_sum(nc_vector[s0:])
+
+                    for beta in betas:
+                        theta = sisfft._sisfft._compute_theta(pmf, s0, L)
+                        logging.debug('raw theta %s', theta)
+
+                        # TODO: too-large or negative theta causes numerical instability,
+                        # so this is a huge hack
+                        theta = sisfft._utils.clamp(theta, 0, sisfft._sisfft.THETA_LIMIT)
+                        shifted_pmf, log_mgf = sisfft._utils.shift(pmf, theta)
+
+                        log_delta, p_lower, p_upper = sisfft._sisfft._bounds(pmf, shifted_pmf, theta, log_mgf,
+                                                                             s0, L, beta)
+
+                        sfft_pval = np.log(2) + p_lower + p_upper - np.logaddexp(p_upper, p_lower)
+                        sfft_accuracy = sisfft._utils.logsubexp(p_upper, p_lower) - np.logaddexp(p_upper, p_lower)
+
+                        logging.debug('theta %s, log_mgf %s, log delta %s, sfft pval %s (range %s -- %s, accuracy %s, needed %s)',
+                                      theta, log_mgf, log_delta, sfft_pval, p_lower, p_upper, sfft_accuracy, np.log(beta))
+                        failed = write_results(f,
+                                               L, s0, beta,
+                                               nc_pvalue,
+                                               sfft_accuracy,
+                                               sfft_pval)
+                        if failed:
+                            name = fname + '-L-{L}-s0-{s0}-beta-{beta}-count-{failures}'.format(
+                                L = L,
+                                s0 = s0,
+                                beta = beta,
+                                failures = failures)
+                            failures += 1
+                            np.save(path.join(out_dir, name), pmf)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-r', '--repeat', type=int, default=DEFAULT_REPEAT,
+                        help = 'the number of random vectors')
+    parser.add_argument('-n', '--lengths', metavar='N', default=DEFAULT_LENGTHS,
+                        help = 'length of each PMF')
+    parser.add_argument('-l', '--Ls', metavar='L', default=DEFAULT_LS,
+                        help = 'python expression creating an iterable for the L to benchmark')
+    parser.add_argument('-s', '--s0', metavar='RATIO', type=float, action='append',
+                        help = 's0 ratios to benchmark with')
+    parser.add_argument('-o', '--out-dir', metavar='DIR', default='.',
+                        help = 'directory to write files to')
+    parser.add_argument('-b', '--beta', metavar='ACCURACY', type=float, action='append',
+                        help = 'relative accuracies to compute the p-value to')
+    parser.add_argument('-p', '--processes', metavar='COUNT', type=int, default=DEFAULT_PROCESSES,
+                        help = 'number of processes to run tests on')
+    parser.add_argument('--log', default='WARN',
+                        help = 'level to log at')
+    parser.add_argument('pmfs', metavar='PMF', nargs='+',
+                        help = 'python expressions for function that create vectors/PMFs to benchmark')
+    args = parser.parse_args()
+
+    level = getattr(logging, args.log.upper(), None)
+    if not isinstance(level, int):
+        raise ValueError('--log argument was not a valid level')
+    logging.basicConfig(level = level)
+
+    ells = list(eval(args.Ls))
+    repeat = args.repeat
+    lengths = list(eval(args.lengths))
+    s0s = args.s0 or [DEFAULT_S0]
+    betas = args.beta or [DEFAULT_BETA]
+    out_dir = args.out_dir
+    pmfs = args.pmfs
+
+    date = datetime.now().strftime('%Y%m%d-%H%M%S')
+
+    P = multiprocessing.Pool(args.processes)
+    jobs = []
+    for n in lengths:
+        for pmf_expr in pmfs:
+            print(n, pmf_expr)
+            run_args = (pmf_expr, date, repeat, n, ells, s0s, betas, out_dir)
+            if args.processes > 1:
+                jobs.append(P.apply_async(run, run_args))
+            else:
+                run(*run_args)
+
+    for j in jobs:
+        j.get()
+    P.close()
+    P.join()
+
+
+if __name__ == '__main__':
+    main()
