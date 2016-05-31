@@ -20,7 +20,9 @@ LENGTH_COL = 'plot-internal-length-column'
 RATIO_COL = 'plot-internal-ratio-column'
 CRB = '/users/pmother/huonw/vac-schol/cleanroom/benches/'
 RI = '/users/pmother/huonw/masters/thesis/images/'
-B = '/users/pmother/huonw/Dropbox/masters/benchmarks/sisfft-26fff4f99c92058a853b4efaeac37f8f892e4531/'
+B = '/users/pmother/huonw/Dropbox/masters/benchmarks/sisfft-e63fa1e4480d702bba63a1d5a26f2d1361d919dc/'
+B2 = '/users/pmother/huonw/Dropbox/masters/benchmarks/sisfft-3182412316d39ef30e2750a7fb8df78f7fd3880d/'
+B3 = '/users/pmother/huonw/Dropbox/masters/benchmarks/sisfft-e63fa1e4480d702bba63a1d5a26f2d1361d919dc/'
 Ba = '/users/pmother/huonw/Dropbox/masters/benchmarks/psfft-26fff4f99c92058a853b4efaeac37f8f892e4531/'
 
 class File(object):
@@ -40,7 +42,7 @@ class Series(object):
         self.show = show
         self.predict = predict
 
-    def get_data(self, files, L_LIMIT, too_small, too_large):
+    def get_data(self, files, X_MIN, X_MAX, too_small, too_large, x_axis):
         file = files[self.file]
         if self.filters:
             keys, values = zip(*self.filters.items())
@@ -49,10 +51,10 @@ class Series(object):
         else:
             data = file.data
 
-        filter = (L_LIMIT <= data[LENGTH_COL]) & (data[LENGTH_COL] <= 2**23) & (data[self.column] >= too_small) & (data[self.column] <= too_large)
+        filter = (X_MIN <= data[x_axis]) & (data[x_axis] <= X_MAX) & (data[self.column] >= too_small) & (data[self.column] <= too_large)
         data = data[filter]
         if self.aggregate is not None:
-            data = self.aggregate(data.groupby(LENGTH_COL, as_index=False))
+            data = self.aggregate(data.groupby(x_axis, as_index=False))
         return data
 
 def symlog_plot(x, y, *args, **kwargs):
@@ -102,14 +104,18 @@ def element_plot():
 
 
 
-def timing_plot(name, var, files, series, relatives, L_LIMIT=2**3, too_small = 0, too_large = np.inf):
+def timing_plot(name, var, files, series, relatives, X_MIN=2**3, X_MAX=2**23,
+                too_small = 0, too_large = np.inf,
+                x_axis = LENGTH_COL, log_log = True,
+                y_lower_limit = None):
     datas = []
     for i, s in enumerate(series):
-        data = s.get_data(files, L_LIMIT, too_small, too_large)
+        data = s.get_data(files, X_MIN, X_MAX, too_small, too_large, x_axis)
         if s.predict is not None:
-            lengths = series[s.predict].get_data(files, L_LIMIT, too_small, too_large)[LENGTH_COL]
+            lengths = series[s.predict].get_data(files, X_MIN, X_MAX,
+                                                 too_small, too_large, x_axis)[x_axis]
             Y = np.log(data[s.column])
-            X = np.log(data[LENGTH_COL])
+            X = np.log(data[x_axis])
             filt = np.invert(np.isnan(X) | np.isnan(Y))
             X = X[filt]
             Y = Y[filt]
@@ -121,18 +127,28 @@ def timing_plot(name, var, files, series, relatives, L_LIMIT=2**3, too_small = 0
             print(np.exp(X))
             print(np.exp(Y))
         if s.show:
-            plt.loglog(data[LENGTH_COL],
-                       data[s.column],
-                       basex = 2,
-                       **s.style)[0].set_label(s.label)
-        datas.append(data[[LENGTH_COL, s.column]])
+            if log_log:
+                plt.loglog(data[x_axis],
+                           data[s.column],
+                           basex = 2,
+                           **s.style)[0].set_label(s.label)
+            else:
+                plt.semilogy(data[x_axis],
+                              data[s.column],
+                              **s.style)[0].set_label(s.label)
+        datas.append(data[[x_axis, s.column]])
 
     plt.legend(loc = 'upper left')
     plt.ylabel('time (s)')
     plt.xlabel('$%s$' % var)
     plt.gca().yaxis.grid(True)
     x_lo,x_hi, _, _ = plt.axis()
-    plt.xlim(x_lo**0.99, x_hi**1.01)
+    if y_lower_limit is not None:
+        plt.ylim(ymin = y_lower_limit)
+    if log_log:
+        plt.xlim(x_lo**0.99, x_hi**1.01)
+    else:
+        plt.xlim(x_lo * 0.99, x_hi * 1.01)
     save(name)
 
     just_one = len(relatives) == 1
@@ -149,10 +165,15 @@ def timing_plot(name, var, files, series, relatives, L_LIMIT=2**3, too_small = 0
             print(extra)
             label = '%s (%s)' % (label, extra)
 
-        plt.loglog(merged[LENGTH_COL],
-                   merged[RATIO_COL],
-                   basex = 2,
-                   **style)[0].set_label(label)
+        if log_log:
+            plt.loglog(merged[x_axis],
+                       merged[RATIO_COL],
+                       basex = 2,
+                       **style)[0].set_label(label)
+        else:
+            plt.semilogy(merged[x_axis],
+                         merged[RATIO_COL],
+                         **style)[0].set_label(label)
         if just_one:
             plt.ylabel(label)
     plt.xlabel('$%s$' % var)
@@ -160,8 +181,10 @@ def timing_plot(name, var, files, series, relatives, L_LIMIT=2**3, too_small = 0
         plt.ylabel('ratio')
         plt.legend(loc = 'upper right')
     plt.gca().yaxis.grid(True)
-    plt.xlim(x_lo**0.99, x_hi**1.01)
-    #plt.xlim(x_lo, x_hi)
+    if log_log:
+        plt.xlim(x_lo**0.99, x_hi**1.01)
+    else:
+        plt.xlim(x_lo * 0.99, x_hi * 1.01)
     save(name + '-relative')
 
 MAX = 0
@@ -280,19 +303,88 @@ def sisfft_plots():
                 {'color': 'b', 'marker': '.', 'linestyle': ''}),
          Series(0, 'NC_time', 'NC',
                 filter,
-                {'color': 'g', 'marker': 'x', 'linestyle': ''})],
+                {'color': 'g', 'marker': 'x', 'linestyle': ''}),
+         Series(0, 'sq_aFFTC_time', 'aFFT-C',
+                filter,
+                {'color': 'r', 'marker': 'd', 'markersize': 5, 'linestyle': ''})],
         relatives = [(0, 1, None, {'marker': '.', 'linestyle': ''})],
-        L_LIMIT=1,
-        too_small = 1e-4)
+        X_MIN=1,
+        X_MAX=2**13,
+        too_small = 1e-4,
+        too_large = 1e4)
     for n in [128]:
-        for beta in [0.1, 1e-3, 1e-7]:
+        for beta in [0.1, 1e-3]:
             for s0ratio in [0.95]:
                 # plot('sisfft-medium-sin',
                 #      'sisfft-20160122-012250-pmf-medium_sinusoid.csv',
                 #      {'n': n, 'beta': beta, 's0ratio': s0ratio})
                 plot('sisfft-shallow-sin-%s-%.0e-%d' % (n, beta, int(s0ratio * 100)),
-                     'sisfft-20160205-232402-pmf-shallow_sinusoid.csv',
+                     'sisfft-20160520-221608-pmf-shallow_sinusoid.csv',
                      {'n': n, 'beta': beta, 's0ratio': s0ratio})
+                plot('sisfft-sfft_bad_quadratic-%s-%.0e-%d' % (n, beta, int(s0ratio * 100)),
+                     'sisfft-20160520-221608-pmf-sfft_bad_quadratic.csv',
+                     {'n': n, 'beta': beta, 's0ratio': s0ratio})
+
+def sisfft_many_s0_plot():
+    plot = lambda name, file, filter: timing_plot(
+        name, 's_0',
+        [File(B2 + file, 'L')],
+        [Series(0, 'sisFFT_time', 'sisFFT',
+                filter,
+                {'color': 'b', 'marker': '.', 'linestyle': ''}),
+         Series(0, 'NC_time', 'NC',
+                filter,
+                {'color': 'g', 'marker': 'x', 'linestyle': ''}),
+         Series(0, 'sq_aFFTC_time', 'aFFT-C',
+                filter,
+                {'color': 'r', 'marker': 'd', 'markersize': 5, 'linestyle': ''})],
+        relatives = [(0, 1, None, {'marker': '.', 'linestyle': ''})],
+        too_small = 1e-4,
+        too_large = 1e4,
+        x_axis = 's0',
+        log_log = False,
+        y_lower_limit = 1e-3)
+
+    for n in [128]:
+        for beta in [0.5, 1e-1, 1e-3, 1e-7]:
+            for L in [256]:
+                plot('sisfft-shallow-sin-s0-%s-%.0e-%s' % (n, beta, L),
+                     'sisfft-20160519-074616-pmf-shallow_sinusoid.csv',
+                     {'n': n, 'beta': beta, 'L': L})
+                plot('sisfft-sfft_bad_quadratic-s0-%s-%.0e-%s' % (n, beta, L),
+                     'sisfft-20160519-074616-pmf-sfft_bad_quadratic.csv',
+                     {'n': n, 'beta': beta, 'L': L})
+
+def sisfft_fftc_overhead():
+    plot = lambda name, file, filter: timing_plot(
+        name, 'n',
+        [File(B3 + file, 'L')],
+        [Series(0, 'sFFT_time', 'sFFT',
+                filter,
+                {'color': 'r', 'marker': 'd', 'markersize': 4, 'linestyle': ''}),
+         Series(0, 'FFTC_time', 'FFT-C',
+                filter,
+                {'color': 'g', 'marker': 'x', 'linestyle': ''}),
+         Series(0, 'sisFFT_time', 'sisFFT',
+                filter,
+                {'color': 'b', 'marker': '.', 'linestyle': ''})],
+         relatives = [(0, 2, None, {'marker': '.', 'linestyle': ''})],
+        too_small = 1e-6,
+        x_axis = 'n',
+        X_MIN = 1,
+        X_MAX = 2**20,
+        too_large = 1e4)
+
+    for L in [2, 4, 32]:
+        for s0ratio in [0.5, 0.9]:
+            for beta in [1e-3]:
+                if s0ratio == 0.9:
+                    plot('sisfft-fftc-overhead-tilt-%s-%.0e-%d' % (L, beta, int(s0ratio * 100)),
+                         'sisfft-20160519-130217-pmf-tilt.csv',
+                         {'L': L, 's0ratio': s0ratio, 'beta': beta})
+                plot('sisfft-fftc-overhead-uniform-%s-%.0e-%d' % (L, beta, int(s0ratio * 100)),
+                     'sisfft-20160519-123958-pmf-uniform.csv',
+                     {'L': L, 's0ratio': s0ratio, 'beta': beta})
 
 
 def splits_plot(name, x, log_pmf, alpha, Lnorm=2):
@@ -473,19 +565,20 @@ def single_conv_plots():
     sisfft_plot('sisfft-good2', log_pmf2, s0, beta)
     sfft_plot('sfft-bad', log_pmf2, s0)
 
-
 def main():
     plt.rc('text', usetex=True)
     plt.rc('font', family='serif',serif='Computer Modern Roman', size=15, weight='normal')
     plt.rc('legend', fontsize=15)
     plt.rcParams['text.latex.preamble']=[r"\usepackage{amsmath}"]
 
+    #sisfft_fftc_overhead()
+    #sisfft_many_s0_plot()
     # element_plot()
-    random_timing_plots()
-    timing_plots()
+    #random_timing_plots()
+    #timing_plots()
     sisfft_plots()
-    splits_plots()
-    single_conv_plots()
+    #splits_plots()
+    #single_conv_plots()
 
 if __name__ == '__main__':
     main()
