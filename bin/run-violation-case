@@ -15,29 +15,33 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('files', metavar='FILE', nargs='+',
                         help = '.npy files to open')
+    parser.add_argument('--log', default='WARN',
+                        help = 'level to log at')
     args = parser.parse_args()
+
+    level = getattr(logging, args.log.upper(), None)
+    if not isinstance(level, int):
+        raise ValueError('--log argument was not a valid level')
+    logging.basicConfig(level = level)
 
     for name in args.files:
         match = FNAME.match(name)
         if match is None:
             print('don\'t understand: %s' % name, file = sys.stderr)
             continue
-
         L = int(match.group(1))
         s0 = int(match.group(2))
         beta = float(match.group(3))
 
         pmf = np.load(name)
-
         sisfft_pvalue = sisfft._sisfft.pvalue(pmf, s0, L, beta)
 
-        nc_pvalue = sisfft._utils.log_sum(sisfft._naive.power_naive(pmf, L)[s0:])
+        v = sisfft._naive.power_naive(pmf, L)
+        nc_pvalue = sisfft._utils.log_sum(v[s0:])
 
-        abs_diff = sisfft._utils.logsubexp(max(nc_pvalue, sisfft_pvalue),
-                                          min(nc_pvalue, sisfft_pvalue))
-        rel_error = np.exp(abs_diff - nc_pvalue)
-        print("%f %f\n%f %s" % (sisfft_pvalue, nc_pvalue, rel_error,
-                                '****' if rel_error > beta else ''))
+        rel_error = abs(np.expm1(sisfft_pvalue - nc_pvalue))
+        print("%s\n%f %f\n%f %s" % (name, sisfft_pvalue, nc_pvalue, rel_error,
+                                    '****' if rel_error > beta else ''))
 
 if __name__ == '__main__':
     main()
